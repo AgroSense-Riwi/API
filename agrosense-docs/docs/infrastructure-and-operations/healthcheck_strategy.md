@@ -285,9 +285,7 @@ def health_check(response: Response, db: Session = Depends(get_db)) -> dict[str,
     # 3. Check LocalStack (Mock S3 Storage)
     s3_status = "connected" if check_s3_storage(settings.AWS_ENDPOINT_URL) else "disconnected"
 
-    is_healthy = all(
-        service == "connected" for service in (db_status, mq_status, s3_status)
-    )
+    is_healthy = all(service == "connected" for service in (db_status, mq_status, s3_status))
 
     if not is_healthy:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
