@@ -78,6 +78,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 class Base(DeclarativeBase):
     """Declarative base class for all SQLAlchemy 2.0 models."""
+
     pass
 
 
