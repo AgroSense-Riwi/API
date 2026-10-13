@@ -8,6 +8,7 @@ from scripts.seed.upsert_engine import (
     ConflictStrategy,
     TableUpsertConfig,
     UpsertEngine,
+    calculate_database_checksum,
 )
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "TOPOLOGICAL_TABLE_ORDER",
     "TableUpsertConfig",
     "UpsertEngine",
+    "calculate_database_checksum",
     "main",
 ]

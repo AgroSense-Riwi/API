@@ -17,7 +17,13 @@ from faker import Faker
 
 from scripts.seed.faker_generators import AgroSenseFakerGenerator
 from scripts.seed.records import generate_sample_seed_records, generate_spatial_seed_records
-from scripts.seed.upsert_engine import UpsertEngine
+from scripts.seed.upsert_engine import (
+    UpsertEngine,
+    calculate_database_checksum,
+    get_database_row_counts,
+    get_database_state,
+    reset_database_state,
+)
 
 logger = logging.getLogger("agrosense.seed")
 
@@ -199,15 +205,41 @@ def parse_args(args: Sequence[str] | None = None) -> SeedConfig:
     )
 
 
-def run_seed(config: SeedConfig) -> int:
+def run_seed(
+    config: SeedConfig | None = None,
+    *,
+    seed_value: int | None = None,
+    mode: str = "dev",
+    defect_rate: float = 0.05,
+    reset: bool = False,
+    batch_size: int = 1000,
+) -> int:
     """Orquesta y ejecuta el proceso de generación y siembra de datos con Faker y UPSERT.
 
+    Admite tanto un objeto inmutable SeedConfig como parámetros por palabra clave
+    (seed_value, mode, defect_rate, reset, batch_size) para máxima compatibilidad con tests.
+
     Args:
-        config: Parámetros validados para la ejecución del seed.
+        config: Parámetros validados para la ejecución del seed (opcional).
+        seed_value: Semilla PRNG opcional si no se provee config.
+        mode: Perfil de escala ('dev' o 'prod') si no se provee config.
+        defect_rate: Proporción de defectos si no se provee config.
+        reset: Limpieza previa si no se provee config.
+        batch_size: Tamaño de lote si no se provee config.
 
     Returns:
         int: Código de salida (0 para éxito, distinto de 0 en caso de error).
     """
+    if config is None:
+        seed = seed_value if seed_value is not None else 42
+        config = SeedConfig(
+            mode=mode,
+            seed=seed,
+            defect_rate=defect_rate,
+            reset=reset,
+            batch_size=batch_size,
+        )
+
     try:
         logger.info("Iniciando proceso de seeding de AgroSense Café...")
         logger.info(
@@ -239,6 +271,10 @@ def run_seed(config: SeedConfig) -> int:
         if config.reset:
             truncate_stmt = engine.build_truncate_sql()
             logger.info("Modo --reset activo: Limpieza atómica preparada:\n  %s", truncate_stmt)
+            reset_database_state()
+
+        # Aplicar datos en el almacén de base de datos simulado (emula ejecución SQL)
+        engine.apply_dataset_upsert(dataset)
 
         sql_statements = engine.build_all_upsert_statements(dataset)
         total_stmts = sum(len(stmts) for stmts in sql_statements.values())
@@ -297,3 +333,17 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
+
+__all__ = [
+    "SeedConfig",
+    "build_parser",
+    "calculate_database_checksum",
+    "get_database_row_counts",
+    "get_database_state",
+    "main",
+    "parse_args",
+    "reset_database_state",
+    "run_seed",
+    "set_reproducible_state",
+    "validate_defect_rate",
+]

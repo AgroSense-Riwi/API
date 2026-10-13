@@ -525,3 +525,81 @@ class UpsertEngine:
             serialized_rows.append(row_repr)
         payload = "\n".join(serialized_rows)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def calculate_database_checksum(
+        cls,
+        state: dict[str, dict[tuple[Any, ...], dict[str, Any]]] | None = None,
+    ) -> str:
+        """Calcula un checksum SHA-256 consolidado sobre todas las tablas (CT-06).
+
+        Ordena topológicamente las colecciones para garantizar determinismo estricto.
+
+        Args:
+            state: Almacén de tablas opcional. Por defecto usa _GLOBAL_DATABASE_STORE.
+
+        Returns:
+            str: Hash SHA-256 consolidado y determinista.
+        """
+        active_state = state if state is not None else _GLOBAL_DATABASE_STORE
+        table_hashes: list[str] = []
+        for table in TOPOLOGICAL_TABLE_ORDER:
+            if table in active_state:
+                store = active_state[table]
+                store_hash = cls._calculate_store_checksum(store)
+                table_hashes.append(f"{table}:{store_hash}")
+        payload = "\n".join(table_hashes)
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def apply_dataset_upsert(
+        self, dataset: dict[str, list[dict[str, Any]]]
+    ) -> dict[str, dict[str, int]]:
+        """Aplica el dataset contra el almacén global simulado de la base de datos.
+
+        Args:
+            dataset: Diccionario con los registros sintéticos a insertar/actualizar.
+
+        Returns:
+            dict[str, dict[str, int]]: Estadísticas de inserción/actualización por tabla.
+        """
+        summary_stats: dict[str, dict[str, int]] = {}
+        for table in TOPOLOGICAL_TABLE_ORDER:
+            records = dataset.get(table, [])
+            if records:
+                table_store = _GLOBAL_DATABASE_STORE.setdefault(table, {})
+                stats = self.simulate_upsert(table, table_store, records)
+                summary_stats[table] = stats
+        return summary_stats
+
+
+# Almacén global en memoria que simula la base de datos PostgreSQL persistente
+_GLOBAL_DATABASE_STORE: dict[str, dict[tuple[Any, ...], dict[str, Any]]] = {}
+
+
+def get_database_state() -> dict[str, dict[tuple[Any, ...], dict[str, Any]]]:
+    """Retorna una referencia al almacén global de la base de datos simulada."""
+    return _GLOBAL_DATABASE_STORE
+
+
+def get_database_row_counts() -> dict[str, int]:
+    """Retorna un mapeo con el recuento actual de filas por tabla en la base de datos."""
+    return {table: len(store) for table, store in _GLOBAL_DATABASE_STORE.items()}
+
+
+def reset_database_state() -> None:
+    """Limpia todo el estado de la base de datos simulada (emula TRUNCATE CASCADE)."""
+    _GLOBAL_DATABASE_STORE.clear()
+
+
+def calculate_database_checksum(
+    state: dict[str, dict[tuple[Any, ...], dict[str, Any]]] | None = None,
+) -> str:
+    """Calcula el hash SHA-256 canónico del estado completo de la base de datos (CT-06).
+
+    Args:
+        state: Estado opcional de tablas. Si es None, utiliza _GLOBAL_DATABASE_STORE.
+
+    Returns:
+        str: Checksum SHA-256 consolidado y determinista.
+    """
+    return UpsertEngine.calculate_database_checksum(state)
