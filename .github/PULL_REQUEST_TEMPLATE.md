@@ -1,7 +1,9 @@
 ﻿## Descripción
+
 <!-- What changes and Why?. Jira Task: Example:AGRO-123 -->
 
 ## Definition of Done
+
 - [ ] Ruff/linters without warning or alerts
 - [ ] Unit and integration tests written and passing in CI
 - [ ] No secrets (credentials, AWS keys, passwords) in code or images
