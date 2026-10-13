@@ -222,7 +222,10 @@ class PostGISSpatialGenerator:
         for _ in range(max_attempts):
             center_lat = round(self.rng.uniform(min_lat, max_lat), 6)
             center_lon = round(self.rng.uniform(min_lon, max_lon), 6)
-            points = self.generate_irregular_polygon(center_lat, center_lon, area_ha, sides)
+            try:
+                points = self.generate_irregular_polygon(center_lat, center_lon, area_ha, sides)
+            except ValueError:
+                continue
             if all(self.is_within_bounds(lat, lon, bounds) for lon, lat in points):
                 return center_lat, center_lon, points
 
