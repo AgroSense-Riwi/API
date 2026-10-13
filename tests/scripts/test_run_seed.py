@@ -56,12 +56,45 @@ def test_env_var_invalid_fallbacks(monkeypatch):
 
 def test_custom_cli_arguments():
     """Verify customized CLI flags are properly parsed into SeedConfig."""
-    args = ["--mode", "prod", "--seed", "100", "--defect-rate", "0.15", "--reset"]
+    args = [
+        "--mode",
+        "prod",
+        "--seed",
+        "100",
+        "--defect-rate",
+        "0.15",
+        "--reset",
+        "--batch-size",
+        "500",
+    ]
     config = parse_args(args)
     assert config.mode == "prod"
     assert config.seed == 100
     assert config.defect_rate == 0.15
     assert config.reset is True
+    assert config.batch_size == 500
+
+
+def test_batch_size_env_fallback(monkeypatch):
+    """Verify CLI reads SEED_DB_BATCH_SIZE from environment."""
+    monkeypatch.setenv("SEED_DB_BATCH_SIZE", "250")
+    config = parse_args([])
+    assert config.batch_size == 250
+
+    monkeypatch.setenv("SEED_DB_BATCH_SIZE", "invalid")
+    config_invalid = parse_args([])
+    assert config_invalid.batch_size == 1000
+
+
+def test_reset_env_fallback(monkeypatch):
+    """Verify CLI reads SEED_RESET_BEFORE_RUN from environment."""
+    monkeypatch.setenv("SEED_RESET_BEFORE_RUN", "true")
+    config = parse_args([])
+    assert config.reset is True
+
+    monkeypatch.setenv("SEED_RESET_BEFORE_RUN", "false")
+    config_false = parse_args([])
+    assert config_false.reset is False
 
 
 def test_invalid_mode_choice():
@@ -122,6 +155,13 @@ def test_generate_spatial_seed_records_is_postgis_ready_and_deterministic():
 def test_run_seed_execution():
     """Verify that run_seed successfully returns exit code 0."""
     config = SeedConfig(mode="dev", seed=42, defect_rate=0.05, reset=False)
+    exit_code = run_seed(config)
+    assert exit_code == 0
+
+
+def test_run_seed_with_reset():
+    """Verify that run_seed with reset=True executes cleanly."""
+    config = SeedConfig(mode="dev", seed=42, defect_rate=0.05, reset=True, batch_size=200)
     exit_code = run_seed(config)
     assert exit_code == 0
 

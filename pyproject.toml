@@ -2,7 +2,9 @@
 name = "agrosense"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "faker>=40.43.0",
+]
 
 [tool.uv.workspace]
 members = ["apps/*"]

@@ -6,8 +6,17 @@ import random
 import uuid
 from typing import Any
 
+from scripts.seed.faker_generators import AgroSenseFakerGenerator
 from scripts.seed.spatial import PostGISSpatialGenerator
 from scripts.seed.spatial_models import AGROSENSE_NAMESPACE
+
+
+def generate_faker_seed_dataset(
+    seed: int = 42, mode: str = "dev"
+) -> dict[str, list[dict[str, Any]]]:
+    """Generate complete synthetic dataset using Faker with deterministic seeding."""
+    generator = AgroSenseFakerGenerator(seed=seed)
+    return generator.generate_all(mode=mode)
 
 
 def generate_sample_seed_records(count: int = 5) -> list[dict[str, Any]]:

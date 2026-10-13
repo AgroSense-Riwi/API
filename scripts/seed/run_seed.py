@@ -13,7 +13,11 @@ import random
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from faker import Faker
+
+from scripts.seed.faker_generators import AgroSenseFakerGenerator
 from scripts.seed.records import generate_sample_seed_records, generate_spatial_seed_records
+from scripts.seed.upsert_engine import UpsertEngine
 
 logger = logging.getLogger("agrosense.seed")
 
@@ -27,12 +31,14 @@ class SeedConfig:
         seed: Semilla entera fija para generadores de números pseudoaleatorios (PRNG).
         defect_rate: Proporción de defectos y anomalías sintéticas a inyectar (0.0 a 1.0).
         reset: Indica si se debe ejecutar un borrado seguro (TRUNCATE CASCADE) previo a la carga.
+        batch_size: Tamaño de lote para sentencias multi-row UPSERT (por defecto 1000).
     """
 
     mode: str
     seed: int
     defect_rate: float
     reset: bool = False
+    batch_size: int = 1000
 
 
 def set_reproducible_state(seed: int) -> None:
@@ -46,6 +52,7 @@ def set_reproducible_state(seed: int) -> None:
     """
     logger.debug("Fijando estado reproducible con semilla=%d", seed)
     random.seed(seed)
+    Faker.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
 
 
@@ -101,6 +108,15 @@ def build_parser() -> argparse.ArgumentParser:
     except ValueError:
         default_defect_rate = 0.05
 
+    try:
+        default_batch_size = int(os.getenv("SEED_DB_BATCH_SIZE", "1000"))
+        if default_batch_size <= 0:
+            default_batch_size = 1000
+    except ValueError:
+        default_batch_size = 1000
+
+    env_reset = os.getenv("SEED_RESET_BEFORE_RUN", "false").lower() in {"true", "1", "yes"}
+
     # 2. Definición del parser con descripción del entregable
     parser = argparse.ArgumentParser(
         prog="run_seed.py",
@@ -147,8 +163,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--reset",
         action="store_true",
-        default=False,
+        default=env_reset,
         help="Limpia las tablas y reinicia secuencias antes de sembrar (TRUNCATE CASCADE).",
+    )
+
+    # Argumento: --batch-size
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=default_batch_size,
+        dest="batch_size",
+        help=f"Tamaño de lote para sentencias multi-row UPSERT. Por defecto: {default_batch_size}.",
     )
 
     return parser
@@ -170,11 +195,12 @@ def parse_args(args: Sequence[str] | None = None) -> SeedConfig:
         seed=parsed.seed,
         defect_rate=parsed.defect_rate,
         reset=parsed.reset,
+        batch_size=parsed.batch_size,
     )
 
 
 def run_seed(config: SeedConfig) -> int:
-    """Orquesta y ejecuta el proceso de generación y siembra de datos.
+    """Orquesta y ejecuta el proceso de generación y siembra de datos con Faker y UPSERT.
 
     Args:
         config: Parámetros validados para la ejecución del seed.
@@ -185,34 +211,58 @@ def run_seed(config: SeedConfig) -> int:
     try:
         logger.info("Iniciando proceso de seeding de AgroSense Café...")
         logger.info(
-            "Configuración activa: mode=%s, seed=%d, defect_rate=%.2f, reset=%s",
+            "Configuración activa: mode=%s, seed=%d, defect_rate=%.2f, reset=%s, batch_size=%d",
             config.mode,
             config.seed,
             config.defect_rate,
             config.reset,
+            config.batch_size,
         )
 
         # 1. Asegurar estado pseudoaleatorio determinista con la semilla configurada
         set_reproducible_state(config.seed)
 
-        # 2. Crear lista vacía y poblarla con una muestra sintética para testear
-        sample_data, reserve_data = generate_spatial_seed_records(
-            generate_sample_seed_records(count=5), seed=config.seed
-        )
+        # 2. Generación determinista de entidades sintéticas con integración de Faker
+        faker_gen = AgroSenseFakerGenerator(seed=config.seed)
+        dataset = faker_gen.generate_all(mode=config.mode)
+        farms_count = len(dataset.get("farms", []))
         logger.info(
-            "Muestra sintética generada exitosamente (%d registros):",
-            len(sample_data),
+            "Dataset sintético generado con Faker: %d fincas, %d productores, %d sensores.",
+            farms_count,
+            len(dataset.get("producers", [])),
+            len(dataset.get("iot_sensors", [])),
         )
-        for item in sample_data:
-            logger.info(
-                "  -> %s [%s] | Altitud: %d msnm | Área: %.2f ha | Sensores: %s",
-                item["farm_code"],
-                item["farm_id"][:8] + "...",
-                item["altitude_msl"],
-                item["total_area_ha"],
-                item["has_pilot_sensors"],
-            )
 
+        # 3. Motor de Idempotencia UPSERT y preparación de sentencias SQL
+        engine = UpsertEngine(batch_size=config.batch_size)
+
+        if config.reset:
+            truncate_stmt = engine.build_truncate_sql()
+            logger.info("Modo --reset activo: Limpieza atómica preparada:\n  %s", truncate_stmt)
+
+        sql_statements = engine.build_all_upsert_statements(dataset)
+        total_stmts = sum(len(stmts) for stmts in sql_statements.values())
+        logger.info(
+            "Sentencias UPSERT (ON CONFLICT) en 5 niveles topológicos: %d en %d tablas.",
+            total_stmts,
+            len(sql_statements),
+        )
+
+        # 4. Certificación estricta de idempotencia y verificación de no-inflación de filas (CT-06)
+        idempotency_report = engine.verify_idempotency(dataset)
+        if not idempotency_report["is_idempotent"] or idempotency_report["row_inflation_detected"]:
+            logger.error("Fallo crítico: Violación de idempotencia detectada en la verificación.")
+            return 1
+
+        logger.info(
+            "Certificación CT-06 aprobada: 0 inflación de filas y 0 duplicados en %d tablas.",
+            idempotency_report["tables_tested"],
+        )
+
+        # 5. Geometrías espaciales de muestra para diagnóstico CLI
+        sample_data, reserve_data = generate_spatial_seed_records(
+            generate_sample_seed_records(count=min(5, farms_count)), seed=config.seed
+        )
         logger.info(
             "Geometrías generadas: %d fincas y %d reservas forestales (SRID=%d).",
             len(sample_data),
