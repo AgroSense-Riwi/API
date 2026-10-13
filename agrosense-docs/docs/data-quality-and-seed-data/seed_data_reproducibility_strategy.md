@@ -48,11 +48,12 @@ import random
 import numpy as np
 from faker import Faker
 
+
 def set_reproducible_state(seed: int = 42):
     random.seed(seed)
     np.random.seed(seed)
     Faker.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
 ```
 
 ## 2.2 Deterministic UUIDv5 Identifier Mapping

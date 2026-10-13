@@ -95,7 +95,6 @@ const config = {
             position: 'left',
             label: 'Project',
           },
-          
         ],
       },
       footer: {
@@ -112,7 +111,7 @@ const config = {
           },
           {
             title: 'Community',
-            items: [  
+            items: [
               {
                 label: 'Stack Overflow',
                 href: 'https://stackoverflow.com/questions/tagged/docusaurus',
