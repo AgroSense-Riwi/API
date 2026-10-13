@@ -217,9 +217,7 @@ async def test_buyer_jwt_without_traceability_scope_is_forbidden(
     )
 
     with pytest.raises(HTTPException) as error:
-        await get_current_buyer_id(
-            HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-        )
+        await get_current_buyer_id(HTTPAuthorizationCredentials(scheme="Bearer", credentials=token))
 
     assert error.value.status_code == 403
 
@@ -249,9 +247,7 @@ async def test_operator_signing_key_cannot_mint_buyer_token(
     )
 
     with pytest.raises(HTTPException) as error:
-        await get_current_buyer_id(
-            HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-        )
+        await get_current_buyer_id(HTTPAuthorizationCredentials(scheme="Bearer", credentials=token))
 
     assert error.value.status_code == 401
 

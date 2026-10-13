@@ -40,9 +40,7 @@ class ExportBatch(Base):
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     batch_code: Mapped[str] = mapped_column(String(100), unique=True, index=True)
-    farm_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("farms.id"), nullable=True, index=True
-    )
+    farm_id: Mapped[UUID | None] = mapped_column(ForeignKey("farms.id"), nullable=True, index=True)
     buyer_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("buyers.id"), nullable=True, index=True
     )

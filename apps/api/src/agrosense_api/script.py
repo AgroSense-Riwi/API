@@ -71,7 +71,7 @@ def _convert_schema_to_openapi_30(value: Any) -> Any:
 
     for keyword in ("exclusiveMinimum", "exclusiveMaximum"):
         bound = converted.get(keyword)
-        if isinstance(bound, (int, float)):
+        if isinstance(bound, int | float):
             converted[keyword.removeprefix("exclusive")] = bound
             converted[keyword] = True
     if "const" in converted:
