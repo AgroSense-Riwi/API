@@ -17,6 +17,7 @@ dev = [
     "pytest",
     "pytest-cov",
     "pre-commit",
+    "faker>=40.43.0",
 ]
 
 [tool.ruff]
