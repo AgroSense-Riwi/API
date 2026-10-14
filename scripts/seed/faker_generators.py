@@ -14,6 +14,7 @@ from typing import Any
 
 from faker import Faker
 
+from scripts.seed.soil import normalize_soil_analysis
 from scripts.seed.spatial import PostGISSpatialGenerator
 from scripts.seed.spatial_models import AGROSENSE_NAMESPACE
 
@@ -514,6 +515,7 @@ class AgroSenseFakerGenerator:
                         "plot_id": plot_id,
                         "farm_id": farm_id,
                         "variety_id": variety["variety_id"],
+                        "growth_stage": "VEGETATIVE",
                         "plot_number": plot_num,
                         "plot_name": f"Lote {plot_num}",
                         "cultivated_area_ha": cultivated_area,
@@ -595,10 +597,22 @@ class AgroSenseFakerGenerator:
         self,
         farms: list[dict[str, Any]],
         count: int = 30,
+        defect_rate: float = 0.05,
     ) -> list[dict[str, Any]]:
-        """Genera análisis químicos de suelos por finca y fecha determinista."""
+        """Genera informes crudos de laboratorio, incluidos defectos mixtos reproducibles."""
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            raise ValueError("count debe ser un entero no negativo.")
+        if not isinstance(defect_rate, int | float) or isinstance(defect_rate, bool):
+            raise ValueError("defect_rate debe ser un número entre 0.0 y 1.0.")
+        if not 0.0 <= defect_rate <= 1.0:
+            raise ValueError("defect_rate debe estar entre 0.0 y 1.0.")
+        if count and not farms:
+            raise ValueError("Se requieren fincas para generar análisis de suelo.")
+
         textures = ["LOAM", "CLAY_LOAM", "SANDY_LOAM", "CLAY"]
-        analyses: list[dict[str, Any]] = []
+        reports: list[dict[str, Any]] = []
+        defect_count = min(count, int(count * defect_rate + 0.5))
+        defective_indices = set(self.rng.sample(range(count), defect_count))
 
         for i in range(1, count + 1):
             farm = farms[(i - 1) % len(farms)]
@@ -611,31 +625,61 @@ class AgroSenseFakerGenerator:
 
             ph_level = round(self.rng.uniform(4.8, 6.2), 2)
             om_pct = round(self.rng.uniform(3.5, 8.5), 2)
-            n_ppm = round(self.rng.uniform(20.0, 75.0), 2)
-            p_ppm = round(self.rng.uniform(12.0, 48.0), 2)
-            k_cmol = round(self.rng.uniform(0.35, 0.95), 2)
+            nutrient_values = {
+                "nitrogen": round(self.rng.uniform(20.0, 75.0), 2),
+                "phosphorus": round(self.rng.uniform(12.0, 48.0), 2),
+                "potassium": round(self.rng.uniform(0.35, 0.95) * 390.98, 2),
+            }
             texture = textures[(i - 1) % len(textures)]
+            is_defective = i - 1 in defective_indices
+            units = self._soil_report_units(is_defective)
+            nutrient_measurements = {
+                nutrient: {
+                    "value": self._soil_raw_value(nutrient, value, units[nutrient]),
+                    "unit": units[nutrient],
+                }
+                for nutrient, value in nutrient_values.items()
+            }
 
-            analyses.append(
+            reports.append(
                 {
                     "analysis_id": analysis_id,
                     "farm_id": farm["farm_id"],
                     "plot_id": plot_id,
                     "sample_date": sample_date,
-                    "raw_unit_reported": "ppm",
                     "ph_level": ph_level,
-                    "ph_value": ph_level,
                     "organic_matter_pct": om_pct,
-                    "nitrogen_ppm": n_ppm,
-                    "nitrogen_mg_kg": n_ppm,
-                    "phosphorus_ppm": p_ppm,
-                    "phosphorus_mg_kg": p_ppm,
-                    "potassium_cmol_kg": k_cmol,
-                    "potassium_mg_kg": round(k_cmol * 390.98, 2),
                     "soil_texture": texture,
+                    "nutrient_measurements": nutrient_measurements,
+                    "quality_defects": ["DEFECT_MIXED_UNITS"] if is_defective else [],
                 }
             )
-        return analyses
+        return reports
+
+    def _soil_report_units(self, is_defective: bool) -> dict[str, str]:
+        if not is_defective:
+            return {nutrient: "mg/kg" for nutrient in ("nitrogen", "phosphorus", "potassium")}
+
+        units = {
+            "nitrogen": self.rng.choice(("mg/kg", "ppm", "g/kg", "%")),
+            "phosphorus": self.rng.choice(("mg/kg", "ppm", "g/kg", "%")),
+            "potassium": self.rng.choice(("mg/kg", "ppm", "g/kg", "%", "cmol/kg")),
+        }
+        while len(set(units.values())) == 1:
+            units["potassium"] = self.rng.choice(("mg/kg", "ppm", "g/kg", "%", "cmol/kg"))
+        return units
+
+    @staticmethod
+    def _soil_raw_value(nutrient: str, value_mg_kg: float, unit: str) -> float:
+        if unit in {"mg/kg", "ppm"}:
+            return value_mg_kg
+        if unit == "g/kg":
+            return round(value_mg_kg / 1000.0, 5)
+        if unit == "%":
+            return round(value_mg_kg / 10_000.0, 6)
+        if unit == "cmol/kg" and nutrient == "potassium":
+            return round(value_mg_kg / 390.98, 2)
+        raise ValueError(f"Unidad de reporte no válida para {nutrient}: {unit!r}.")
 
     def generate_harvest_deliveries(
         self,
@@ -729,7 +773,7 @@ class AgroSenseFakerGenerator:
                 natural_key = f"{batch_code}:{delivery_id}"
                 composition_id = self.get_uuid5(natural_key)
                 contrib_weight = round(delivery["delivered_weight_kg"] * 0.9, 2)
-                plot_id = delivery.get("plot_id") or self.get_uuid5(f"FIN-{i+1:04d}:PLOT-1")
+                plot_id = delivery.get("plot_id") or self.get_uuid5(f"FIN-{i + 1:04d}:PLOT-1")
 
                 compositions.append(
                     {
@@ -777,11 +821,14 @@ class AgroSenseFakerGenerator:
             )
         return contracts
 
-    def generate_all(self, mode: str = "dev") -> dict[str, list[dict[str, Any]]]:
+    def generate_all(
+        self, mode: str = "dev", defect_rate: float = 0.05
+    ) -> dict[str, list[dict[str, Any]]]:
         """Genera el dataset sintético completo según el perfil de volumen.
 
         Args:
             mode: 'dev' para desarrollo local o 'prod' para volumen completo.
+            defect_rate: Proporción reproducible de reportes con unidades mixtas (0.0 a 1.0).
 
         Returns:
             dict[str, list[dict[str, Any]]]: Diccionario con las colecciones de entidades.
@@ -822,7 +869,10 @@ class AgroSenseFakerGenerator:
 
         # Tier 4
         iot_sensors = self.generate_iot_sensors(farms, sensor_types)
-        soil_lab_analyses = self.generate_soil_lab_analyses(farms, count=analyses_count)
+        soil_lab_reports = self.generate_soil_lab_analyses(
+            farms, count=analyses_count, defect_rate=defect_rate
+        )
+        soil_analyses = [normalize_soil_analysis(report) for report in soil_lab_reports]
         harvest_deliveries = self.generate_harvest_deliveries(farms, count=deliveries_count)
 
         # Tier 5
@@ -846,7 +896,8 @@ class AgroSenseFakerGenerator:
             "farm_plots": farm_plots,
             "farm_reserve_overlaps": farm_reserve_overlaps,
             "iot_sensors": iot_sensors,
-            "soil_lab_analyses": soil_lab_analyses,
+            "soil_lab_reports": soil_lab_reports,
+            "soil_analyses": soil_analyses,
             "harvest_deliveries": harvest_deliveries,
             "export_batches": export_batches,
             "batch_farm_compositions": batch_farm_compositions,

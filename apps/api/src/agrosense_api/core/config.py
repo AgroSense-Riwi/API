@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     rabbitmq_url: SecretStr | None = None
     telemetry_queue: str = "agrosense.telemetry"
     allowed_origins: list[str] = Field(default_factory=list)
+    fertilizer_baseline_kg_ha: float = Field(default=200.0, gt=0)
+    fertilizer_dose_multiplier: float = Field(default=1.0, ge=0)
 
     @field_validator("jwt_secret_key", "buyer_jwt_secret_key")
     @classmethod

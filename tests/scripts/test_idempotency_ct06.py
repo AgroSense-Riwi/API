@@ -19,6 +19,7 @@ from scripts.seed.run_seed import (
     run_seed,
 )
 from scripts.seed.upsert_engine import (
+    TABLE_UPSERT_REGISTRY,
     TOPOLOGICAL_TABLE_ORDER,
     UpsertEngine,
 )
@@ -158,7 +159,7 @@ def test_engine_verify_idempotency_deep_inspection():
 
     assert report["is_idempotent"] is True
     assert report["row_inflation_detected"] is False
-    assert report["tables_tested"] == len(dataset)
+    assert report["tables_tested"] == len(set(dataset) & TABLE_UPSERT_REGISTRY.keys())
 
     for table_name, result in report["table_results"].items():
         assert result["passed"] is True

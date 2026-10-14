@@ -24,6 +24,7 @@ def test_default_cli_arguments():
     assert config.seed == 42
     assert config.defect_rate == 0.05
     assert config.reset is False
+    assert config.f1_npk_unit == "mg/kg"
 
 
 def test_env_var_fallbacks(monkeypatch):
@@ -73,6 +74,16 @@ def test_custom_cli_arguments():
     assert config.defect_rate == 0.15
     assert config.reset is True
     assert config.batch_size == 500
+
+
+def test_soil_reference_cli_arguments(monkeypatch):
+    monkeypatch.setenv("AGROSENSE_F1_S3_URI", "s3://bucket/reference.csv")
+    monkeypatch.setenv("AGROSENSE_F1_NPK_UNIT", "mg/kg")
+
+    config = parse_args([])
+
+    assert config.soil_reference_s3_uri == "s3://bucket/reference.csv"
+    assert config.f1_npk_unit == "mg/kg"
 
 
 def test_batch_size_env_fallback(monkeypatch):
@@ -164,6 +175,30 @@ def test_run_seed_with_reset():
     config = SeedConfig(mode="dev", seed=42, defect_rate=0.05, reset=True, batch_size=200)
     exit_code = run_seed(config)
     assert exit_code == 0
+
+
+def test_run_seed_optional_f1_comparison_uses_loaded_reference(monkeypatch):
+    monkeypatch.setattr(
+        "scripts.seed.run_seed.load_f1_crop_reference",
+        lambda _: {
+            "crop_label": "coffee",
+            "nutrients": {
+                "nitrogen": {"min": 1, "median": 2, "max": 100, "sample_count": 2},
+                "phosphorus": {"min": 1, "median": 2, "max": 100, "sample_count": 2},
+                "potassium": {"min": 1, "median": 2, "max": 100, "sample_count": 2},
+                "ph": {"min": 4, "median": 5.5, "max": 7, "sample_count": 2},
+            },
+        },
+    )
+    config = SeedConfig(
+        mode="dev",
+        seed=42,
+        defect_rate=0.05,
+        soil_reference_s3_uri="s3://bucket/reference.csv",
+        f1_npk_unit="mg/kg",
+    )
+
+    assert run_seed(config) == 0
 
 
 def test_run_seed_exception_handling(monkeypatch):

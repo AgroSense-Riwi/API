@@ -12,11 +12,11 @@ from scripts.seed.spatial_models import AGROSENSE_NAMESPACE
 
 
 def generate_faker_seed_dataset(
-    seed: int = 42, mode: str = "dev"
+    seed: int = 42, mode: str = "dev", defect_rate: float = 0.05
 ) -> dict[str, list[dict[str, Any]]]:
     """Generate complete synthetic dataset using Faker with deterministic seeding."""
     generator = AgroSenseFakerGenerator(seed=seed)
-    return generator.generate_all(mode=mode)
+    return generator.generate_all(mode=mode, defect_rate=defect_rate)
 
 
 def generate_sample_seed_records(count: int = 5) -> list[dict[str, Any]]:

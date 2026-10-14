@@ -10,7 +10,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 from geoalchemy2 import Geometry
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 revision: str = "0001_initial"
 down_revision: str | None = None
@@ -49,6 +49,66 @@ def upgrade() -> None:
     )
     op.create_index("ix_farms_code", "farms", ["code"], unique=True)
     op.create_index("ix_farms_boundary", "farms", ["boundary"], postgresql_using="gist")
+    op.create_table(
+        "coffee_varieties",
+        sa.Column("variety_id", sa.Integer(), primary_key=True, nullable=False),
+        sa.Column("name", sa.String(length=100), nullable=False, unique=True),
+        sa.Column("rust_resistance_level", sa.String(length=50), nullable=False),
+        sa.Column("rust_susceptibility", sa.String(length=50), nullable=False),
+        sa.Column("optimal_temp_min_c", sa.Float(), nullable=False),
+        sa.Column("optimal_temp_max_c", sa.Float(), nullable=False),
+    )
+    op.create_table(
+        "farm_plots",
+        sa.Column("plot_id", UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column("farm_id", UUID(as_uuid=True), nullable=False),
+        sa.Column("variety_id", sa.Integer(), nullable=False),
+        sa.Column(
+            "growth_stage", sa.String(length=50), nullable=False, server_default="VEGETATIVE"
+        ),
+        sa.Column("plot_number", sa.Integer(), nullable=False, server_default="1"),
+        sa.Column("plot_name", sa.String(length=100), nullable=False, server_default=""),
+        sa.Column("cultivated_area_ha", sa.Float(), nullable=False, server_default="0"),
+        sa.Column("plot_area_ha", sa.Float(), nullable=False, server_default="0"),
+        sa.Column("tree_density_per_ha", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("crop_age_years", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("polygon_geojson", sa.JSON().with_variant(JSONB(), "postgresql"), nullable=True),
+        sa.ForeignKeyConstraint(["farm_id"], ["farms.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["variety_id"], ["coffee_varieties.variety_id"]),
+    )
+    op.create_index("ix_farm_plots_farm_id", "farm_plots", ["farm_id"])
+    op.create_index("ix_farm_plots_variety_id", "farm_plots", ["variety_id"])
+    op.create_table(
+        "crop_nutrient_references",
+        sa.Column("reference_id", sa.Integer(), primary_key=True, nullable=False),
+        sa.Column("variety_id", sa.Integer(), nullable=False),
+        sa.Column("crop_label", sa.String(length=100), nullable=False),
+        sa.Column("growth_stage", sa.String(length=50), nullable=False),
+        sa.Column("target_ph_min", sa.Float(), nullable=False),
+        sa.Column("target_ph_max", sa.Float(), nullable=False),
+        sa.Column("ph_min", sa.Float(), nullable=False),
+        sa.Column("ph_max", sa.Float(), nullable=False),
+        sa.Column("req_nitrogen_kg_ha", sa.Float(), nullable=False),
+        sa.Column("n_min_mg_kg", sa.Float(), nullable=False),
+        sa.Column("n_max_mg_kg", sa.Float(), nullable=False),
+        sa.Column("req_phosphorus_kg_ha", sa.Float(), nullable=False),
+        sa.Column("p_min_mg_kg", sa.Float(), nullable=False),
+        sa.Column("p_max_mg_kg", sa.Float(), nullable=False),
+        sa.Column("req_potassium_kg_ha", sa.Float(), nullable=False),
+        sa.Column("k_min_mg_kg", sa.Float(), nullable=False),
+        sa.Column("k_max_mg_kg", sa.Float(), nullable=False),
+        sa.UniqueConstraint(
+            "variety_id", "growth_stage", name="uq_crop_nutrient_references_variety_stage"
+        ),
+        sa.ForeignKeyConstraint(
+            ["variety_id"], ["coffee_varieties.variety_id"], ondelete="CASCADE"
+        ),
+    )
+    op.create_index(
+        "ix_crop_nutrient_references_variety_id",
+        "crop_nutrient_references",
+        ["variety_id"],
+    )
     op.create_table(
         "forest_reserves",
         sa.Column("id", UUID(as_uuid=True), primary_key=True, nullable=False),
@@ -165,38 +225,6 @@ def upgrade() -> None:
         """
     )
     op.create_table(
-        "fertilizer_recommendations",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, nullable=False),
-        sa.Column("farm_id", UUID(as_uuid=True), nullable=False),
-        sa.Column(
-            "estimated_saving_pct",
-            sa.Numeric(5, 2),
-            nullable=False,
-            server_default="0",
-        ),
-        sa.Column(
-            "generated_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.func.now(),
-        ),
-        sa.ForeignKeyConstraint(["farm_id"], ["farms.id"], ondelete="CASCADE"),
-        sa.CheckConstraint(
-            "estimated_saving_pct BETWEEN -100 AND 100",
-            name="ck_fertilizer_recommendations_saving_range",
-        ),
-    )
-    op.create_index(
-        "ix_fertilizer_recommendations_farm_id",
-        "fertilizer_recommendations",
-        ["farm_id"],
-    )
-    op.create_index(
-        "ix_fertilizer_recommendations_farm_generated",
-        "fertilizer_recommendations",
-        ["farm_id", sa.text("generated_at DESC")],
-    )
-    op.create_table(
         "farm_visits",
         sa.Column("id", UUID(as_uuid=True), primary_key=True, nullable=False),
         sa.Column("farm_id", UUID(as_uuid=True), nullable=False),
@@ -218,10 +246,17 @@ def upgrade() -> None:
         "soil_analyses",
         sa.Column("id", UUID(as_uuid=True), primary_key=True, nullable=False),
         sa.Column("farm_id", UUID(as_uuid=True), nullable=False),
+        sa.Column("plot_id", UUID(as_uuid=True), nullable=True),
         sa.Column("ph", sa.Float(), nullable=False),
         sa.Column("nitrogen_mg_kg", sa.Float(), nullable=False),
         sa.Column("phosphorus_mg_kg", sa.Float(), nullable=False),
         sa.Column("potassium_mg_kg", sa.Float(), nullable=False),
+        sa.Column(
+            "source_data",
+            sa.JSON().with_variant(JSONB(), "postgresql"),
+            nullable=False,
+            server_default=sa.text("'{}'"),
+        ),
         sa.Column(
             "measured_at",
             sa.DateTime(timezone=True),
@@ -229,9 +264,85 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
         sa.ForeignKeyConstraint(["farm_id"], ["farms.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["plot_id"], ["farm_plots.plot_id"], ondelete="SET NULL"),
     )
     op.create_index("ix_soil_analyses_farm_id", "soil_analyses", ["farm_id"])
+    op.create_index("ix_soil_analyses_plot_id", "soil_analyses", ["plot_id"])
     op.create_index("ix_soil_analyses_measured_at", "soil_analyses", ["measured_at"])
+    op.create_table(
+        "fertilizer_recommendations",
+        sa.Column("recommendation_id", UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column("analysis_id", UUID(as_uuid=True), nullable=False, unique=True),
+        sa.Column("plot_id", UUID(as_uuid=True), nullable=True),
+        sa.Column("farm_id", UUID(as_uuid=True), nullable=False),
+        sa.Column("n_evaluation", sa.String(length=20), nullable=False),
+        sa.Column("p_evaluation", sa.String(length=20), nullable=False),
+        sa.Column("k_evaluation", sa.String(length=20), nullable=False),
+        sa.Column("ph_evaluation", sa.String(length=20), nullable=False),
+        sa.Column("apply_fertilizer", sa.Boolean(), nullable=False),
+        sa.Column("recommended_n_kg_ha", sa.Numeric(6, 2), nullable=False),
+        sa.Column("recommended_p_kg_ha", sa.Numeric(6, 2), nullable=False),
+        sa.Column("recommended_k_kg_ha", sa.Numeric(6, 2), nullable=False),
+        sa.Column("estimated_saving_pct", sa.Numeric(5, 2), nullable=False),
+        sa.Column(
+            "generated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.ForeignKeyConstraint(["analysis_id"], ["soil_analyses.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["plot_id"], ["farm_plots.plot_id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["farm_id"], ["farms.id"], ondelete="CASCADE"),
+        sa.CheckConstraint(
+            "n_evaluation IN ('DEFICIENT', 'OPTIMAL', 'EXCESS_WARNING')",
+            name="ck_fertilizer_recommendations_n_evaluation",
+        ),
+        sa.CheckConstraint(
+            "p_evaluation IN ('DEFICIENT', 'OPTIMAL', 'EXCESS_WARNING')",
+            name="ck_fertilizer_recommendations_p_evaluation",
+        ),
+        sa.CheckConstraint(
+            "k_evaluation IN ('DEFICIENT', 'OPTIMAL', 'EXCESS_WARNING')",
+            name="ck_fertilizer_recommendations_k_evaluation",
+        ),
+        sa.CheckConstraint(
+            "ph_evaluation IN ('ACIDIC', 'OPTIMAL', 'ALKALINE')",
+            name="ck_fertilizer_recommendations_ph_evaluation",
+        ),
+        sa.CheckConstraint(
+            "recommended_n_kg_ha >= 0 AND recommended_p_kg_ha >= 0 AND recommended_k_kg_ha >= 0",
+            name="ck_fertilizer_recommendations_doses_nonnegative",
+        ),
+        sa.CheckConstraint(
+            "estimated_saving_pct BETWEEN 0 AND 100",
+            name="ck_fertilizer_recommendations_saving_range",
+        ),
+    )
+    op.create_index(
+        "ix_fertilizer_recommendations_analysis_id",
+        "fertilizer_recommendations",
+        ["analysis_id"],
+    )
+    op.create_index(
+        "ix_fertilizer_recommendations_farm_id",
+        "fertilizer_recommendations",
+        ["farm_id"],
+    )
+    op.create_index(
+        "ix_fertilizer_recommendations_farm_generated",
+        "fertilizer_recommendations",
+        ["farm_id", sa.text("generated_at DESC")],
+    )
+    op.create_index(
+        "ix_fertilizer_recommendations_plot_id",
+        "fertilizer_recommendations",
+        ["plot_id"],
+    )
+    op.create_index(
+        "ix_fertilizer_recommendations_plot_generated",
+        "fertilizer_recommendations",
+        ["plot_id", sa.text("generated_at DESC")],
+    )
     op.create_table(
         "traceability_events",
         sa.Column("id", UUID(as_uuid=True), primary_key=True, nullable=False),
@@ -255,6 +366,18 @@ def downgrade() -> None:
     op.drop_index("ix_traceability_events_batch_id", table_name="traceability_events")
     op.drop_table("traceability_events")
     op.drop_index(
+        "ix_fertilizer_recommendations_plot_generated",
+        table_name="fertilizer_recommendations",
+    )
+    op.drop_index(
+        "ix_fertilizer_recommendations_plot_id",
+        table_name="fertilizer_recommendations",
+    )
+    op.drop_index(
+        "ix_fertilizer_recommendations_analysis_id",
+        table_name="fertilizer_recommendations",
+    )
+    op.drop_index(
         "ix_fertilizer_recommendations_farm_generated",
         table_name="fertilizer_recommendations",
     )
@@ -270,6 +393,7 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION prevent_certified_lot_composition_change()")
     op.drop_table("batch_farm_compositions")
     op.drop_index("ix_soil_analyses_measured_at", table_name="soil_analyses")
+    op.drop_index("ix_soil_analyses_plot_id", table_name="soil_analyses")
     op.drop_index("ix_soil_analyses_farm_id", table_name="soil_analyses")
     op.drop_table("soil_analyses")
     op.drop_index("ix_farm_visits_due_at", table_name="farm_visits")
@@ -282,6 +406,12 @@ def downgrade() -> None:
     op.drop_index("ix_forest_reserves_boundary", table_name="forest_reserves")
     op.drop_index("ix_forest_reserves_code", table_name="forest_reserves")
     op.drop_table("forest_reserves")
+    op.drop_index("ix_crop_nutrient_references_variety_id", table_name="crop_nutrient_references")
+    op.drop_table("crop_nutrient_references")
+    op.drop_index("ix_farm_plots_variety_id", table_name="farm_plots")
+    op.drop_index("ix_farm_plots_farm_id", table_name="farm_plots")
+    op.drop_table("farm_plots")
+    op.drop_table("coffee_varieties")
     op.drop_index("ix_farms_boundary", table_name="farms")
     op.drop_index("ix_farms_code", table_name="farms")
     op.drop_table("farms")

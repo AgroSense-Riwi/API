@@ -12,6 +12,7 @@ from agrosense_api.db.base import Base
 if TYPE_CHECKING:
     from agrosense_api.models.export_batch import ExportBatch
     from agrosense_api.models.farm_composition import BatchFarmComposition
+    from agrosense_api.models.farm_plot import FarmPlot
     from agrosense_api.models.farm_visit import FarmVisit
     from agrosense_api.models.fertilizer_recommendation import FertilizerRecommendation
     from agrosense_api.models.soil_analysis import SoilAnalysis
@@ -44,5 +45,6 @@ class Farm(Base):
     fertilizer_recommendations: Mapped[list["FertilizerRecommendation"]] = relationship(
         back_populates="farm"
     )
+    plots: Mapped[list["FarmPlot"]] = relationship(back_populates="farm")
     soil_analyses: Mapped[list["SoilAnalysis"]] = relationship(back_populates="farm")
     visits: Mapped[list["FarmVisit"]] = relationship(back_populates="farm")
