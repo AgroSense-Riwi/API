@@ -79,11 +79,14 @@ def test_generator_injects_reproducible_mixed_unit_defects_and_normalizes():
         len({measurement["unit"] for measurement in report["nutrient_measurements"].values()}) > 1
         for report in defective_reports
     )
-    assert len(
-        AgroSenseFakerGenerator(seed=42).generate_soil_lab_analyses(
-            farms, count=10, defect_rate=0
+    assert (
+        len(
+            AgroSenseFakerGenerator(seed=42).generate_soil_lab_analyses(
+                farms, count=10, defect_rate=0
+            )
         )
-    ) == 10
+        == 10
+    )
 
     normalized = [normalize_soil_analysis(report) for report in reports_a]
     assert len(normalized) == 10
@@ -157,9 +160,6 @@ def test_f1_loader_reads_the_requested_s3_object(monkeypatch):
 
     assert received == {
         "bucket": "data-lake-agrosense",
-        "key": (
-            "bronze/kaggle_crop_reference/year=2026/month=10/day=14/"
-            "Crop_recommendation.csv"
-        ),
+        "key": ("bronze/kaggle_crop_reference/year=2026/month=10/day=14/Crop_recommendation.csv"),
     }
     assert result["crop_label"] == "coffee"

@@ -61,9 +61,9 @@ def test_seed_idempotency_ct06():
         )
 
     # 4. Assert cryptographic checksum convergence (100% deterministic state)
-    assert (
-        hash_run_1 == hash_run_2
-    ), "Assertion Error: Seed execution is not idempotent (CT-06 violation)"
+    assert hash_run_1 == hash_run_2, (
+        "Assertion Error: Seed execution is not idempotent (CT-06 violation)"
+    )
 
 
 def test_zero_row_inflation_across_all_tables_dual_execution():
@@ -81,9 +81,9 @@ def test_zero_row_inflation_across_all_tables_dual_execution():
     for table in TOPOLOGICAL_TABLE_ORDER:
         if table in initial_counts:
             row_inflation = final_counts[table] - initial_counts[table]
-            assert (
-                row_inflation == 0
-            ), f"Table '{table}' experienced row inflation of {row_inflation} rows"
+            assert row_inflation == 0, (
+                f"Table '{table}' experienced row inflation of {row_inflation} rows"
+            )
 
 
 def test_dual_execution_with_seed_config_object():
@@ -131,9 +131,9 @@ def test_reset_flag_reproduces_identical_state():
     run_seed(seed_value=42, mode="dev", reset=True)
     hash_after_reset = calculate_database_checksum()
 
-    assert (
-        hash_standard == hash_after_reset
-    ), "Reset execution did not produce the identical deterministic state"
+    assert hash_standard == hash_after_reset, (
+        "Reset execution did not produce the identical deterministic state"
+    )
 
 
 def test_different_seeds_produce_divergent_checksums():
@@ -144,9 +144,9 @@ def test_different_seeds_produce_divergent_checksums():
     run_seed(seed_value=99, mode="dev", reset=True)
     hash_seed_99 = calculate_database_checksum()
 
-    assert (
-        hash_seed_42 != hash_seed_99
-    ), "Different seeds must generate distinct datasets and checksums"
+    assert hash_seed_42 != hash_seed_99, (
+        "Different seeds must generate distinct datasets and checksums"
+    )
 
 
 def test_engine_verify_idempotency_deep_inspection():
@@ -167,9 +167,9 @@ def test_engine_verify_idempotency_deep_inspection():
         assert result["initial_count"] == result["re_run_count"]
         assert result["checksum_match"] is True
         assert result["pass1_stats"]["inserted"] == result["initial_count"]
-        assert (
-            result["pass2_stats"]["inserted"] == 0
-        ), f"Table {table_name} inserted new rows on pass 2 (inflation violation)"
+        assert result["pass2_stats"]["inserted"] == 0, (
+            f"Table {table_name} inserted new rows on pass 2 (inflation violation)"
+        )
 
 
 def test_row_inflation_detection_on_artificial_mutation(monkeypatch):

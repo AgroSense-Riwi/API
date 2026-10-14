@@ -20,10 +20,13 @@ def test_faker_generator_deterministic_reproducibility():
         assert dataset_1[table_name] == dataset_2[table_name], f"Mismatch in {table_name}"
     assert len(dataset_1["soil_lab_reports"]) == 40
     assert len(dataset_1["soil_analyses"]) == 40
-    assert sum(
-        "DEFECT_MIXED_UNITS" in report["quality_defects"]
-        for report in dataset_1["soil_lab_reports"]
-    ) == 2
+    assert (
+        sum(
+            "DEFECT_MIXED_UNITS" in report["quality_defects"]
+            for report in dataset_1["soil_lab_reports"]
+        )
+        == 2
+    )
     assert all(
         "nitrogen_mg_kg" in analysis and "source_data" in analysis
         for analysis in dataset_1["soil_analyses"]

@@ -48,8 +48,7 @@ class FertilizerRecommendation(Base):
             name="ck_fertilizer_recommendations_ph_evaluation",
         ),
         CheckConstraint(
-            "recommended_n_kg_ha >= 0 AND recommended_p_kg_ha >= 0 "
-            "AND recommended_k_kg_ha >= 0",
+            "recommended_n_kg_ha >= 0 AND recommended_p_kg_ha >= 0 AND recommended_k_kg_ha >= 0",
             name="ck_fertilizer_recommendations_doses_nonnegative",
         ),
         CheckConstraint(

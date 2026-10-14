@@ -773,7 +773,7 @@ class AgroSenseFakerGenerator:
                 natural_key = f"{batch_code}:{delivery_id}"
                 composition_id = self.get_uuid5(natural_key)
                 contrib_weight = round(delivery["delivered_weight_kg"] * 0.9, 2)
-                plot_id = delivery.get("plot_id") or self.get_uuid5(f"FIN-{i+1:04d}:PLOT-1")
+                plot_id = delivery.get("plot_id") or self.get_uuid5(f"FIN-{i + 1:04d}:PLOT-1")
 
                 compositions.append(
                     {
