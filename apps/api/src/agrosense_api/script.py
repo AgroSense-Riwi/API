@@ -97,6 +97,28 @@ def custom_openapi() -> dict[str, Any]:
         license_info=app.license_info,
     )
     error_schema = {"$ref": "#/components/schemas/ErrorResponse"}
+    schema.setdefault("components", {}).setdefault("schemas", {})["ErrorResponse"] = {
+        "type": "object",
+        "title": "ErrorResponse",
+        "required": ["error"],
+        "properties": {
+            "error": {
+                "type": "object",
+                "title": "ErrorDetail",
+                "required": ["code", "message"],
+                "properties": {
+                    "code": {"type": "string", "title": "Code"},
+                    "message": {"type": "string", "title": "Message"},
+                    "details": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "title": "Details",
+                        "nullable": True,
+                    },
+                },
+            }
+        },
+    }
     for path_item in schema["paths"].values():
         for operation in path_item.values():
             if isinstance(operation, dict) and "responses" in operation:

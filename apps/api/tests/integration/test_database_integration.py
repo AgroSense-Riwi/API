@@ -37,11 +37,13 @@ TEST_DATABASE_URL = os.getenv(
 @pytest.fixture(scope="module")
 def db_engine():
     """Inicializa el motor PostgreSQL/PostGIS y crea las 13 tablas del modelo."""
-    engine = create_engine(TEST_DATABASE_URL, echo=False)
-
-    with engine.begin() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto;"))
+    try:
+        engine = create_engine(TEST_DATABASE_URL, echo=False)
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto;"))
+    except Exception as exc:
+        pytest.skip(f"Base de datos PostgreSQL/PostGIS no disponible: {exc}")
 
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
