@@ -25,6 +25,8 @@ Configure the service with `AGROSENSE_` environment variables:
 | `AGROSENSE_AUTH_SCOPES` | JSON array of OAuth scopes granted to issued tokens |
 | `AGROSENSE_RABBITMQ_URL` | AMQP URL for telemetry publishing |
 | `AGROSENSE_ALLOWED_ORIGINS` | JSON array of allowed browser origins |
+| `AGROSENSE_FERTILIZER_BASELINE_KG_HA` | Traditional fertilizer baseline used for estimated savings (default: 200 kg/ha) |
+| `AGROSENSE_FERTILIZER_DOSE_MULTIPLIER` | Multiplier applied to the F1 `req_*_kg_ha` values (default: 1) |
 
 Create an Argon2 password hash with:
 
@@ -40,9 +42,20 @@ PostGIS. Apply migrations with
 Rate limits use SlowAPI's in-process storage and should be backed by shared
 storage when running multiple workers.
 
-The soil recommendations are intentionally conservative screening rules, not
-fertilizer prescriptions; confirm measurements and treatments with a qualified
-agronomist.
+Soil recommendations compare each plot's latest normalized F6 analysis with
+its F1 crop-variety and growth-stage reference. Deficient nutrients use the
+reference's `req_*_kg_ha`, adjusted by `AGROSENSE_FERTILIZER_DOSE_MULTIPLIER`;
+any N/P/K excess blocks fertilizer application. No unapproved soil-mass
+conversion factor is assumed. The
+estimated saving compares total recommended nutrient dose with
+`AGROSENSE_FERTILIZER_BASELINE_KG_HA` and is an estimate, not a guaranteed 20%
+reduction. The pH result is `ACIDIC`, `OPTIMAL`, or `ALKALINE`; only nutrient
+excess triggers the global fertilizer block.
+
+Use `GET /api/v1/soil/recommendations/plot/{plot_id}` for a plot-specific
+recommendation. `GET /api/v1/soil/recommendations/{farm_id}` remains available
+and evaluates the farm's latest linked soil analysis. Generating a
+recommendation persists or updates the row keyed by `analysis_id`.
 
 ## Connect to PostgreSQL/PostGIS
 

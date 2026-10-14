@@ -17,6 +17,11 @@ from faker import Faker
 
 from scripts.seed.faker_generators import AgroSenseFakerGenerator
 from scripts.seed.records import generate_sample_seed_records, generate_spatial_seed_records
+from scripts.seed.soil import (
+    DEFAULT_F1_NPK_UNIT,
+    compare_soil_analyses_to_f1,
+    load_f1_crop_reference,
+)
 from scripts.seed.upsert_engine import (
     UpsertEngine,
     calculate_database_checksum,
@@ -38,6 +43,8 @@ class SeedConfig:
         defect_rate: Proporción de defectos y anomalías sintéticas a inyectar (0.0 a 1.0).
         reset: Indica si se debe ejecutar un borrado seguro (TRUNCATE CASCADE) previo a la carga.
         batch_size: Tamaño de lote para sentencias multi-row UPSERT (por defecto 1000).
+        soil_reference_s3_uri: URI opcional del CSV de referencia F1 en S3.
+        f1_npk_unit: Unidad documentada N/P/K de F1, necesaria para la comparación.
     """
 
     mode: str
@@ -45,6 +52,8 @@ class SeedConfig:
     defect_rate: float
     reset: bool = False
     batch_size: int = 1000
+    soil_reference_s3_uri: str | None = None
+    f1_npk_unit: str = DEFAULT_F1_NPK_UNIT
 
 
 def set_reproducible_state(seed: int) -> None:
@@ -181,6 +190,20 @@ def build_parser() -> argparse.ArgumentParser:
         dest="batch_size",
         help=f"Tamaño de lote para sentencias multi-row UPSERT. Por defecto: {default_batch_size}.",
     )
+    parser.add_argument(
+        "--soil-reference-s3-uri",
+        default=os.getenv("AGROSENSE_F1_S3_URI"),
+        help="URI opcional s3://... del CSV F1; requiere credenciales/perfil AWS local.",
+    )
+    parser.add_argument(
+        "--f1-npk-unit",
+        default=os.getenv("AGROSENSE_F1_NPK_UNIT", DEFAULT_F1_NPK_UNIT),
+        choices=["mg/kg", "ppm"],
+        help=(
+            "Unidad documentada de N/P/K en F1. Se requiere para comparar contra mg/kg; "
+            "no se asumen conversiones desde kg/ha."
+        ),
+    )
 
     return parser
 
@@ -202,6 +225,8 @@ def parse_args(args: Sequence[str] | None = None) -> SeedConfig:
         defect_rate=parsed.defect_rate,
         reset=parsed.reset,
         batch_size=parsed.batch_size,
+        soil_reference_s3_uri=parsed.soil_reference_s3_uri,
+        f1_npk_unit=parsed.f1_npk_unit,
     )
 
 
@@ -213,6 +238,8 @@ def run_seed(
     defect_rate: float = 0.05,
     reset: bool = False,
     batch_size: int = 1000,
+    soil_reference_s3_uri: str | None = None,
+    f1_npk_unit: str = DEFAULT_F1_NPK_UNIT,
 ) -> int:
     """Orquesta y ejecuta el proceso de generación y siembra de datos con Faker y UPSERT.
 
@@ -238,6 +265,8 @@ def run_seed(
             defect_rate=defect_rate,
             reset=reset,
             batch_size=batch_size,
+            soil_reference_s3_uri=soil_reference_s3_uri,
+            f1_npk_unit=f1_npk_unit,
         )
 
     try:
@@ -256,14 +285,47 @@ def run_seed(
 
         # 2. Generación determinista de entidades sintéticas con integración de Faker
         faker_gen = AgroSenseFakerGenerator(seed=config.seed)
-        dataset = faker_gen.generate_all(mode=config.mode)
+        dataset = faker_gen.generate_all(mode=config.mode, defect_rate=config.defect_rate)
+        soil_defect_count = sum(
+            "DEFECT_MIXED_UNITS" in report["quality_defects"]
+            for report in dataset["soil_lab_reports"]
+        )
         farms_count = len(dataset.get("farms", []))
         logger.info(
-            "Dataset sintético generado con Faker: %d fincas, %d productores, %d sensores.",
+            "Dataset sintético: %d fincas, %d productores, %d sensores y %d/%d informes F6 "
+            "con DEFECT_MIXED_UNITS normalizados a mg/kg.",
             farms_count,
             len(dataset.get("producers", [])),
             len(dataset.get("iot_sensors", [])),
+            soil_defect_count,
+            len(dataset["soil_lab_reports"]),
         )
+
+        if config.soil_reference_s3_uri:
+            if not config.f1_npk_unit:
+                raise ValueError(
+                    "Debe indicarse --f1-npk-unit después de verificar las unidades N/P/K "
+                    "documentadas en F1."
+                )
+            f1_reference = load_f1_crop_reference(config.soil_reference_s3_uri)
+            comparisons = compare_soil_analyses_to_f1(
+                dataset["soil_analyses"],
+                f1_reference,
+                f1_npk_unit=config.f1_npk_unit,
+            )
+            outside_ranges = sum(
+                status != "within_f1_range"
+                for comparison in comparisons
+                for status in comparison["nutrient_range_status"].values()
+            )
+            logger.info(
+                "Comparación descriptiva F6/F1 (%s, unidad F1=%s): %d análisis; "
+                "%d nutrientes fuera del rango de muestras. No es una prescripción.",
+                f1_reference["crop_label"],
+                config.f1_npk_unit,
+                len(comparisons),
+                outside_ranges,
+            )
 
         # 3. Motor de Idempotencia UPSERT y preparación de sentencias SQL
         engine = UpsertEngine(batch_size=config.batch_size)

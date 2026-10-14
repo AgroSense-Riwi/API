@@ -31,6 +31,10 @@ def test_registry_integrity_and_tiers():
     assert TABLE_UPSERT_REGISTRY["iot_sensors"].conflict_target == ("serial_number",)
     assert TABLE_UPSERT_REGISTRY["iot_sensors"].tier == 4
 
+    assert TABLE_UPSERT_REGISTRY["soil_analyses"].table_name == "soil_analyses"
+    assert TABLE_UPSERT_REGISTRY["soil_analyses"].conflict_target == ("id",)
+    assert TABLE_UPSERT_REGISTRY["soil_analyses"].tier == 4
+
     assert TABLE_UPSERT_REGISTRY["export_batches"].strategy == ConflictStrategy.DO_UPDATE
     assert TABLE_UPSERT_REGISTRY["export_batches"].conflict_target == ("batch_code",)
     assert TABLE_UPSERT_REGISTRY["export_batches"].tier == 5
@@ -102,6 +106,28 @@ def test_build_upsert_sql_do_nothing():
     sql = statements[0]
     assert "INSERT INTO departments" in sql
     assert "ON CONFLICT (dane_code) DO NOTHING" in sql
+
+
+def test_soil_analysis_upsert_targets_api_schema():
+    engine = UpsertEngine()
+    statements = engine.build_upsert_sql(
+        "soil_analyses",
+        [
+            {
+                "id": "analysis-1",
+                "farm_id": "farm-1",
+                "ph": 5.4,
+                "nitrogen_mg_kg": 50.0,
+                "phosphorus_mg_kg": 25.0,
+                "potassium_mg_kg": 195.49,
+                "measured_at": "2026-10-14T00:00:00Z",
+                "source_data": {"quality_defects": ["DEFECT_MIXED_UNITS"]},
+            }
+        ],
+    )
+    assert "INSERT INTO soil_analyses" in statements[0]
+    assert "ON CONFLICT (id) DO UPDATE SET" in statements[0]
+    assert "source_data = EXCLUDED.source_data" in statements[0]
 
 
 def test_build_upsert_sql_batching():
