@@ -1,21 +1,95 @@
+from __future__ import annotations
+
+import uuid
 from typing import TYPE_CHECKING
-from uuid import UUID, uuid4
 
-from sqlalchemy import String
+from sqlalchemy import ForeignKey, String, text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.types import Uuid
 
-from agrosense_api.db.base import Base
+from .base import BaseModel
 
 if TYPE_CHECKING:
-    from agrosense_api.models.export_batch import ExportBatch
+    from .batch import ExportBatch
 
 
-class Buyer(Base):
-    __tablename__ = "buyers"
+class InternationalBuyer(BaseModel):
+    """Comprador internacional autorizado para adquirir lotes de exportación."""
 
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    name: Mapped[str] = mapped_column(String(200), unique=True)
-    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    __tablename__ = "international_buyers"
 
-    export_batches: Mapped[list["ExportBatch"]] = relationship(back_populates="buyer")
+    buyer_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    client_id: Mapped[str] = mapped_column(
+        String(50),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    buyer_name: Mapped[str] = mapped_column(
+        String(150),
+        nullable=False,
+    )
+
+    # Relaciones
+    contracts: Mapped[list[BuyerBatchContract]] = relationship(
+        "BuyerBatchContract",
+        back_populates="buyer",
+    )
+
+    def __repr__(self) -> str:
+        return f"<InternationalBuyer(buyer_id={self.buyer_id}, client_id='{self.client_id}')>"
+
+
+class BuyerBatchContract(BaseModel):
+    """
+    Tabla de asociación contractual entre compradores internacionales y lotes (RN-11).
+    Restringe la eliminación de compradores con contratos asociados (RESTRICT).
+    """
+
+    __tablename__ = "buyer_batch_contracts"
+
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    batch_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey(
+            "export_batches.batch_id",
+            ondelete="CASCADE",
+            name="fk_buyer_batch_contracts_batch_id",
+        ),
+        nullable=False,
+    )
+    buyer_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey(
+            "international_buyers.buyer_id",
+            ondelete="RESTRICT",
+            name="fk_buyer_batch_contracts_buyer_id",
+        ),
+        nullable=False,
+    )
+
+    # Relaciones
+    batch: Mapped[ExportBatch] = relationship(
+        "ExportBatch",
+        back_populates="contracts",
+    )
+    buyer: Mapped[InternationalBuyer] = relationship(
+        "InternationalBuyer",
+        back_populates="contracts",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<BuyerBatchContract(contract_id={self.contract_id}, "
+            f"batch_id={self.batch_id}, buyer_id={self.buyer_id})>"
+        )
