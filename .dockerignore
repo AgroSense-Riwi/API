@@ -1,0 +1,35 @@
+# Entornos virtuales y cachés de Python
+.venv
+**/.venv
+__pycache__
+**/__pycache__
+*.py[cod]
+*$py.class
+.pytest_cache
+**/.pytest_cache
+.ruff_cache
+**/.ruff_cache
+.mypy_cache
+**/.mypy_cache
+.coverage
+htmlcov/
+
+# Control de versiones y secretos locales
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+
+# Tests, bases de datos locales y dependencias externas
+**/tests
+node_modules
+**/node_modules
+*.db
+*.sqlite3
+
+# Documentación e infraestructura que no requiere el build de la API
+infra/
+pipelines/
+docs/
+*.md
