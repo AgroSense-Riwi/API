@@ -1,0 +1,199 @@
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.3-python3.12
+  user: "${AIRFLOW_UID:-50000}:0"
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${AIRFLOW_DB_NAME:-airflow_db}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY:?AIRFLOW__CORE__FERNET_KEY is required}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY:?AIRFLOW__WEBSERVER__SECRET_KEY is required}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-changeme}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-changeme}
+    AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+    S3_BUCKET: ${S3_BUCKET:-changeme}
+  volumes:
+    - ./pipelines/airflow/dags:/opt/airflow/dags:ro
+    - ./pipelines/airflow/plugins:/opt/airflow/plugins:ro
+    - airflow_logs_data:/opt/airflow/logs
+
+services:
+  db:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: agrosense_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      AIRFLOW_DB_NAME: ${AIRFLOW_DB_NAME:-airflow_db}
+    volumes:
+      - pg_spatial_data:/var/lib/postgresql/data
+      - ./infra/docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - private_subnet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  broker:
+    image: rabbitmq:3.13-management-alpine
+    container_name: agrosense_broker
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?RABBITMQ_DEFAULT_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_DEFAULT_VHOST:-/}
+    volumes:
+      - iot_telemetry_queue_data:/var/lib/rabbitmq
+    networks:
+      - private_subnet
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  migrate:
+    image: agrosense-api:local
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: agrosense_migrate
+    working_dir: /app/apps/api
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      AGROSENSE_DATABASE_URL: ${AGROSENSE_DATABASE_URL:?AGROSENSE_DATABASE_URL is required}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - private_subnet
+    restart: "no"
+
+  api:
+    image: agrosense-api:local
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: agrosense_api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      AGROSENSE_DATABASE_URL: ${AGROSENSE_DATABASE_URL:?AGROSENSE_DATABASE_URL is required}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      AGROSENSE_RABBITMQ_URL: ${AGROSENSE_RABBITMQ_URL:?AGROSENSE_RABBITMQ_URL is required}
+      AGROSENSE_JWT_SECRET_KEY: ${AGROSENSE_JWT_SECRET_KEY:?AGROSENSE_JWT_SECRET_KEY is required}
+      AGROSENSE_BUYER_JWT_SECRET_KEY: ${AGROSENSE_BUYER_JWT_SECRET_KEY:?AGROSENSE_BUYER_JWT_SECRET_KEY is required}
+      AGROSENSE_ALLOWED_ORIGINS: ${AGROSENSE_ALLOWED_ORIGINS:-["http://localhost:3000","http://localhost:8000"]}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-changeme}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-changeme}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-changeme}
+    depends_on:
+      db:
+        condition: service_healthy
+      broker:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - public_subnet
+      - private_subnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: agrosense_airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate &&
+        airflow users create \
+          --username "$${AIRFLOW_ADMIN_USER}" \
+          --password "$${AIRFLOW_ADMIN_PASSWORD}" \
+          --firstname Admin \
+          --lastname AgroSense \
+          --role Admin \
+          --email "$${AIRFLOW_ADMIN_EMAIL:-admin@agrosense.local}"
+    environment:
+      <<: *airflow-common-env
+      AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:?AIRFLOW_ADMIN_USER is required}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?AIRFLOW_ADMIN_PASSWORD is required}
+      AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@agrosense.local}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - private_subnet
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: agrosense_airflow_webserver
+    command: webserver
+    restart: unless-stopped
+    ports:
+      - "${AIRFLOW_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    networks:
+      - public_subnet
+      - private_subnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: agrosense_airflow_scheduler
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    networks:
+      - private_subnet
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+networks:
+  public_subnet:
+    name: agrosense_public_subnet
+    driver: bridge
+  private_subnet:
+    name: agrosense_private_subnet
+    driver: bridge
+    internal: true
+
+volumes:
+  pg_spatial_data:
+    name: pg_spatial_data
+  iot_telemetry_queue_data:
+    name: iot_telemetry_queue_data
+  airflow_logs_data:
+    name: airflow_logs_data
