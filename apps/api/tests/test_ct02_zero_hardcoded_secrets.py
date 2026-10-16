@@ -7,10 +7,10 @@ Verifies that:
 3. .gitignore excludes .env to prevent local credential leakage into version control.
 """
 
-from pathlib import Path
 import re
-import yaml
+from pathlib import Path
 
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_PATH = REPO_ROOT / "docker-compose.yml"
@@ -35,10 +35,7 @@ def test_docker_compose_enforces_zero_hardcoded_secrets() -> None:
         if isinstance(env, dict):
             env_items = env.items()
         elif isinstance(env, list):
-            env_items = [
-                item.split("=", 1) if "=" in item else (item, "")
-                for item in env
-            ]
+            env_items = [item.split("=", 1) if "=" in item else (item, "") for item in env]
         else:
             continue
 
@@ -49,7 +46,7 @@ def test_docker_compose_enforces_zero_hardcoded_secrets() -> None:
                 # Must be an interpolated variable like ${VAR:?error} or ${VAR:-default}
                 assert val_str.startswith("${") and val_str.endswith("}"), (
                     f"CT-02 Violation in service '{service_name}': sensitive variable '{key}' "
-                    f"has hardcoded plaintext value '{val_str}' instead of environment interpolation."
+                    f"has hardcoded plaintext value '{val_str}' instead of interpolation."
                 )
 
 
@@ -58,7 +55,9 @@ def test_env_example_uses_safe_placeholders_for_secrets() -> None:
     assert ENV_EXAMPLE_PATH.is_file(), f".env.example not found at {ENV_EXAMPLE_PATH}"
 
     content = ENV_EXAMPLE_PATH.read_text(encoding="utf-8")
-    lines = [line.strip() for line in content.splitlines() if line.strip() and not line.startswith("#")]
+    lines = [
+        line.strip() for line in content.splitlines() if line.strip() and not line.startswith("#")
+    ]
 
     for line in lines:
         if "=" in line:
@@ -68,8 +67,8 @@ def test_env_example_uses_safe_placeholders_for_secrets() -> None:
 
             if any(keyword in key_upper for keyword in SENSITIVE_KEYWORDS):
                 assert "CHANGEME" in val_clean.upper(), (
-                    f"CT-02 Violation in .env.example: sensitive key '{key}' has value '{val_clean}' "
-                    "which is not a safe placeholder ('changeme')."
+                    f"CT-02 Violation in .env.example: sensitive key '{key}' "
+                    f"has value '{val_clean}' which is not a safe placeholder ('changeme')."
                 )
 
 
@@ -78,7 +77,9 @@ def test_gitignore_enforces_env_exclusion() -> None:
     assert GITIGNORE_PATH.is_file(), f".gitignore not found at {GITIGNORE_PATH}"
 
     content = GITIGNORE_PATH.read_text(encoding="utf-8")
-    ignored_patterns = [line.strip() for line in content.splitlines() if line.strip() and not line.startswith("#")]
+    ignored_patterns = [
+        line.strip() for line in content.splitlines() if line.strip() and not line.startswith("#")
+    ]
 
-    has_env_ignore = any(re.match(r"^\.?env(\..*)?$", pattern) or pattern == ".env" for pattern in ignored_patterns)
+    has_env_ignore = any(re.match(r"^\.?env(\..*)?$", p) or p == ".env" for p in ignored_patterns)
     assert has_env_ignore, "CT-02 Violation: .gitignore must explicitly ignore .env"
