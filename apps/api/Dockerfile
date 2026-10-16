@@ -44,9 +44,12 @@ RUN groupadd --gid 10001 agrosense && \
 
 WORKDIR /app
 
-# Copiar entorno virtual y artefactos de apps/api (incluyendo alembic.ini y migrations/)
+# Copiar entorno virtual y artefactos de apps/api (incluyendo alembic.ini, migrations/ y entrypoint.sh)
 COPY --from=builder --chown=agrosense:agrosense /app/.venv /app/.venv
 COPY --from=builder --chown=agrosense:agrosense /app/apps/api /app/apps/api
+
+# Garantizar permisos de ejecución en el script de entrada
+RUN chmod 0755 /app/apps/api/entrypoint.sh
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
@@ -56,4 +59,5 @@ USER agrosense
 
 EXPOSE 8000
 
+ENTRYPOINT ["/app/apps/api/entrypoint.sh"]
 CMD ["uvicorn", "agrosense_api.script:app", "--host", "0.0.0.0", "--port", "8000"]
