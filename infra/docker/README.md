@@ -22,19 +22,18 @@ Infraestructura de contenedores alineada con una arquitectura de red de doble ca
 |  agrosense_private_subnet (driver: bridge | internal: true | Data Tier)|
 |                                                                        |
 |   +------------------------+              +------------------------+   |
-|   |   agrosense_migrate    |              |  agrosense_airflow_    |   |
-|   | (alembic upgrade head) |              |   scheduler / init     |   |
+|   |      agrosense_db      |              |  agrosense_airflow_    |   |
+|   |  (PostgreSQL+PostGIS)  |              |   scheduler / init     |   |
 |   +-----------+------------+              +-----------+------------+   |
 |               |                                       |                |
 |               v                                       v                |
-|   +------------------------+              +------------------------+   |
-|   |      agrosense_db      |              |    agrosense_broker    |   |
-|   |  (PostgreSQL+PostGIS)  |              |  (RabbitMQ 3.13 Mgmt)  |   |
-|   +-----------+------------+              +-----------+------------+   |
-|               |                                       |                |
-+---------------|---------------------------------------|----------------+
-                v                                       v
-       (pg_spatial_data)                   (iot_telemetry_queue_data)
+|       (pg_spatial_data)                   |    agrosense_broker    |   |
+|                                           |  (RabbitMQ 3.13 Mgmt)  |   |
+|                                           +-----------+------------+   |
+|                                                       |                |
++-------------------------------------------------------|----------------+
+                                                        v
+                                           (iot_telemetry_queue_data)
 ```
 
 ## 2. Matriz de Servicios, Redes y Puertos
@@ -43,8 +42,7 @@ Infraestructura de contenedores alineada con una arquitectura de red de doble ca
 | :--- | :--- | :--- | :--- | :--- |
 | **db** | agrosense_db | private_subnet | Ninguno (Aislado) | `pg_spatial_data`, `infra/docker/postgres/init` |
 | **broker** | agrosense_broker | private_subnet | Ninguno (Aislado) | `iot_telemetry_queue_data` |
-| **migrate** | agrosense_migrate | private_subnet | Ninguno (One-shot) | N/A |
-| **api** | agrosense_api | public_subnet, private_subnet | `${API_PORT:-8000}:8000` | N/A |
+| **api** | agrosense_api | public_subnet, private_subnet | `${API_PORT:-8000}:8000` | N/A (Auto-migra con `entrypoint.sh`) |
 | **airflow-init** | agrosense_airflow_init | private_subnet | Ninguno (One-shot) | `airflow_logs_data`, `dags`, `plugins` |
 | **airflow-webserver** | agrosense_airflow_webserver | public_subnet, private_subnet | `${AIRFLOW_PORT:-8080}:8080` | `airflow_logs_data`, `dags`, `plugins` |
 | **airflow-scheduler** | agrosense_airflow_scheduler | private_subnet | Ninguno (Aislado) | `airflow_logs_data`, `dags`, `plugins` |

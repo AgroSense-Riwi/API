@@ -58,24 +58,6 @@ services:
       retries: 5
       start_period: 20s
 
-  migrate:
-    image: agrosense-api:local
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
-    container_name: agrosense_migrate
-    working_dir: /app/apps/api
-    command: ["alembic", "upgrade", "head"]
-    environment:
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      AGROSENSE_DATABASE_URL: ${AGROSENSE_DATABASE_URL:?AGROSENSE_DATABASE_URL is required}
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - private_subnet
-    restart: "no"
-
   api:
     image: agrosense-api:local
     build:
@@ -92,6 +74,7 @@ services:
       AGROSENSE_JWT_SECRET_KEY: ${AGROSENSE_JWT_SECRET_KEY:?AGROSENSE_JWT_SECRET_KEY is required}
       AGROSENSE_BUYER_JWT_SECRET_KEY: ${AGROSENSE_BUYER_JWT_SECRET_KEY:?AGROSENSE_BUYER_JWT_SECRET_KEY is required}
       AGROSENSE_ALLOWED_ORIGINS: ${AGROSENSE_ALLOWED_ORIGINS:-["http://localhost:3000","http://localhost:8000"]}
+      SKIP_MIGRATIONS: ${SKIP_MIGRATIONS:-false}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-changeme}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-changeme}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
@@ -101,8 +84,6 @@ services:
         condition: service_healthy
       broker:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
     networks:
       - public_subnet
       - private_subnet
