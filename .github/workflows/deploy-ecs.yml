@@ -138,20 +138,24 @@ jobs:
       - name: Preparar Task Definition
         id: task-def
         env:
-          IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
+          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
-          # Reemplazar placeholders en la task definition de la API
-          ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
+          IMAGE_URI="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${COMMIT_SHA}"
+          echo "Using IMAGE_URI: ${IMAGE_URI}"
 
-          cat infra/aws/ecs/task-definition-api.json | \
-            sed "s|\${AWS_ACCOUNT_ID}|${ACCOUNT_ID}|g" | \
-            sed "s|\${AWS_REGION}|${AWS_REGION}|g" | \
-            jq --arg img "${IMAGE_URI}" \
-              '.containerDefinitions[0].image = $img' \
-            > /tmp/task-def-api.json
+          # Reemplazar variables en el JSON
+          sed -e "s|\${AWS_ACCOUNT_ID}|${ACCOUNT_ID}|g" \
+              -e "s|\${AWS_REGION}|${AWS_REGION}|g" \
+              infra/aws/ecs/task-definition-api.json > /tmp/task-def-base.json
 
-          echo "Task definition preparada:"
-          cat /tmp/task-def-api.json | jq '.containerDefinitions[0].image'
+          jq --arg img "${IMAGE_URI}" \
+             '.containerDefinitions[0].image = $img' \
+             /tmp/task-def-base.json > /tmp/task-def-api.json
+
+          echo "Task definition verificada:"
+          jq '.containerDefinitions[0].image' /tmp/task-def-api.json
 
       - name: Registrar Task Definition en ECS
         id: register-task
