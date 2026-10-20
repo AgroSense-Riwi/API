@@ -15,6 +15,7 @@ WORKDIR /app
 
 # 1. Copiar manifiestos del workspace para aprovechar la caché de capas
 COPY pyproject.toml uv.lock ./
+COPY apps/api/pyproject.toml ./apps/api/pyproject.toml
 COPY apps/simulators/pyproject.toml ./apps/simulators/pyproject.toml
 
 # Instalar dependencias de producción del simulador
