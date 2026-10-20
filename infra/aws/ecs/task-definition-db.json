@@ -4,7 +4,7 @@
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "1024",
   "memory": "2048",
-  "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/ecsTaskExecutionRole",
+  "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/rol_1_ecsTaskExecutionRole",
   "volumes": [
     {
       "name": "pg-spatial-data",
