@@ -30,8 +30,9 @@ select = ["E", "F", "I", "B", "UP", "S"]   # S = reglas de seguridad (bandit)
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101", "S603", "S607"]       # permite assert y llamadas a subprocess en pruebas
 "scripts/seed/**" = ["S311"]                   # PRNG estándar requerido para simulación determinista (no criptográfica)
+"apps/simulators/**" = ["S311"]               # PRNG para simulación de telemetría IoT física
 
 [tool.pytest.ini_options]
 testpaths = ["apps", "tests"]
-pythonpath = [".", "apps/api/src"]
+pythonpath = [".", "apps/api/src", "apps/simulators/src"]
 addopts = "--cov=apps --cov=scripts --cov-report=term-missing"
