@@ -1,0 +1,71 @@
+{
+  "family": "agrosense-broker",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/ecsTaskExecutionRole",
+  "volumes": [
+    {
+      "name": "rabbitmq-data",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "${EFS_FILE_SYSTEM_ID}",
+        "rootDirectory": "/rabbitmq-data",
+        "transitEncryption": "ENABLED"
+      }
+    }
+  ],
+  "containerDefinitions": [
+    {
+      "name": "agrosense-broker",
+      "image": "rabbitmq:3.13-management-alpine",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 5672,
+          "protocol": "tcp"
+        },
+        {
+          "containerPort": 15672,
+          "protocol": "tcp"
+        }
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "rabbitmq-data",
+          "containerPath": "/var/lib/rabbitmq",
+          "readOnly": false
+        }
+      ],
+      "healthCheck": {
+        "command": ["CMD", "rabbitmq-diagnostics", "-q", "ping"],
+        "interval": 10,
+        "timeout": 5,
+        "retries": 5,
+        "startPeriod": 30
+      },
+      "secrets": [
+        {
+          "name": "RABBITMQ_DEFAULT_USER",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/rabbitmq-user"
+        },
+        {
+          "name": "RABBITMQ_DEFAULT_PASS",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/rabbitmq-password"
+        }
+      ],
+      "environment": [
+        { "name": "RABBITMQ_DEFAULT_VHOST", "value": "/" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/agrosense-broker",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "broker",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

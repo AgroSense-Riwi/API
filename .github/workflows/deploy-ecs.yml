@@ -1,0 +1,258 @@
+# ==============================================================================
+# AgroSense Café — CI/CD Pipeline: Build → Push ECR → Deploy ECS Fargate
+# ==============================================================================
+# Dispara en push a 'main' o manualmente.
+#
+# GitHub Secrets necesarios (ver infra/aws/setup-ecs-infra.sh para valores):
+#   AWS_ACCESS_KEY_ID       - IAM access key con permisos ECR + ECS
+#   AWS_SECRET_ACCESS_KEY   - IAM secret key
+#   AWS_ACCOUNT_ID          - ID de cuenta de AWS (12 dígitos)
+#   AWS_REGION              - Región (e.g. us-east-1)
+#   ECS_CLUSTER             - Nombre del cluster ECS (agrosense-cluster)
+#   ECS_SERVICE_API         - Nombre del servicio ECS de la API
+#   SUBNET_1                - ID de subnet privada 1
+#   SUBNET_2                - ID de subnet privada 2
+#   API_SG                  - Security Group de la API
+#   ALB_TG_ARN              - ARN del Target Group del ALB
+# ==============================================================================
+
+name: Deploy to ECS Fargate
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: "Forzar despliegue sin CI checks"
+        required: false
+        default: "false"
+        type: boolean
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ECR_REPOSITORY: agrosense-api
+  IMAGE_TAG: ${{ github.sha }}
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ─── Job 1: Calidad de código (reutiliza CI existente) ────────────────────
+  quality:
+    if: ${{ github.event.inputs.force_deploy != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --locked --all-packages
+      - run: uv run pre-commit run --all-files
+      - run: uv run pytest
+
+  # ─── Job 2: Escaneo de secretos ──────────────────────────────────────────
+  secrets-scan:
+    if: ${{ github.event.inputs.force_deploy != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Job 3: Build Docker image → Push a ECR ──────────────────────────────
+  build-and-push:
+    needs: [quality, secrets-scan]
+    if: |
+      always() &&
+      (needs.quality.result == 'success' || needs.quality.result == 'skipped') &&
+      (needs.secrets-scan.result == 'success' || needs.secrets-scan.result == 'skipped')
+    runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.build.outputs.image_uri }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login a Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build y Push de imagen Docker
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          IMAGE_LATEST="${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
+
+          echo "Building image: ${IMAGE_URI}"
+
+          docker build \
+            -f apps/api/Dockerfile \
+            -t "${IMAGE_URI}" \
+            -t "${IMAGE_LATEST}" \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --cache-from "${IMAGE_LATEST}" \
+            .
+
+          docker push "${IMAGE_URI}"
+          docker push "${IMAGE_LATEST}"
+
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+          echo "✅ Image pushed: ${IMAGE_URI}"
+
+  # ─── Job 4: Deploy a ECS Fargate ─────────────────────────────────────────
+  deploy:
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Preparar Task Definition
+        id: task-def
+        env:
+          IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
+        run: |
+          # Reemplazar placeholders en la task definition de la API
+          ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
+
+          cat infra/aws/ecs/task-definition-api.json | \
+            sed "s|\${AWS_ACCOUNT_ID}|${ACCOUNT_ID}|g" | \
+            sed "s|\${AWS_REGION}|${AWS_REGION}|g" | \
+            jq --arg img "${IMAGE_URI}" \
+              '.containerDefinitions[0].image = $img' \
+            > /tmp/task-def-api.json
+
+          echo "Task definition preparada:"
+          cat /tmp/task-def-api.json | jq '.containerDefinitions[0].image'
+
+      - name: Registrar Task Definition en ECS
+        id: register-task
+        run: |
+          TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/task-def-api.json \
+            --region "${AWS_REGION}" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "task_def_arn=${TASK_DEF_ARN}" >> "$GITHUB_OUTPUT"
+          echo "✅ Task Definition registrada: ${TASK_DEF_ARN}"
+
+      - name: Crear o actualizar ECS Service
+        env:
+          TASK_DEF_ARN: ${{ steps.register-task.outputs.task_def_arn }}
+          CLUSTER: ${{ secrets.ECS_CLUSTER }}
+          SERVICE: ${{ secrets.ECS_SERVICE_API }}
+        run: |
+          # Verificar si el servicio ya existe
+          SERVICE_EXISTS=$(aws ecs describe-services \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}" \
+            --region "${AWS_REGION}" \
+            --query 'services[?status==`ACTIVE`].serviceName' \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "${SERVICE_EXISTS}" ]; then
+            echo "Actualizando servicio existente..."
+            aws ecs update-service \
+              --cluster "${CLUSTER}" \
+              --service "${SERVICE}" \
+              --task-definition "${TASK_DEF_ARN}" \
+              --force-new-deployment \
+              --region "${AWS_REGION}" \
+              --query 'service.serviceName' \
+              --output text
+          else
+            echo "Creando nuevo servicio ECS..."
+            aws ecs create-service \
+              --cluster "${CLUSTER}" \
+              --service-name "${SERVICE}" \
+              --task-definition "${TASK_DEF_ARN}" \
+              --desired-count 1 \
+              --launch-type FARGATE \
+              --deployment-configuration "minimumHealthyPercent=50,maximumPercent=200" \
+              --network-configuration "awsvpcConfiguration={subnets=[${{ secrets.SUBNET_1 }},${{ secrets.SUBNET_2 }}],securityGroups=[${{ secrets.API_SG }}],assignPublicIp=ENABLED}" \
+              --region "${AWS_REGION}" \
+              --query 'service.serviceName' \
+              --output text
+          fi
+
+          echo "✅ Servicio ECS desplegado."
+
+      - name: Esperar estabilización del servicio
+        env:
+          CLUSTER: ${{ secrets.ECS_CLUSTER }}
+          SERVICE: ${{ secrets.ECS_SERVICE_API }}
+        run: |
+          echo "Esperando a que el servicio se estabilice (máx 10 min)..."
+          aws ecs wait services-stable \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}" \
+            --region "${AWS_REGION}"
+          echo "✅ Servicio estabilizado y operativo."
+
+      - name: Verificar Health Check
+        env:
+          CLUSTER: ${{ secrets.ECS_CLUSTER }}
+          SERVICE: ${{ secrets.ECS_SERVICE_API }}
+        run: |
+          RUNNING=$(aws ecs describe-services \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}" \
+            --region "${AWS_REGION}" \
+            --query 'services[0].runningCount' \
+            --output text)
+
+          DESIRED=$(aws ecs describe-services \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}" \
+            --region "${AWS_REGION}" \
+            --query 'services[0].desiredCount' \
+            --output text)
+
+          echo "Running: ${RUNNING} / Desired: ${DESIRED}"
+
+          if [ "${RUNNING}" -eq "${DESIRED}" ]; then
+            echo "✅ Despliegue exitoso. ${RUNNING} tasks corriendo."
+          else
+            echo "⚠️ Despliegue parcial: ${RUNNING}/${DESIRED} tasks activas."
+            exit 1
+          fi
+
+      - name: Resumen del despliegue
+        if: success()
+        run: |
+          echo "╔══════════════════════════════════════════════════╗"
+          echo "║  ✅ AgroSense API desplegada en ECS Fargate     ║"
+          echo "╠══════════════════════════════════════════════════╣"
+          echo "║  Cluster:  ${{ secrets.ECS_CLUSTER }}"
+          echo "║  Service:  ${{ secrets.ECS_SERVICE_API }}"
+          echo "║  Image:    ${{ needs.build-and-push.outputs.image_uri }}"
+          echo "║  Commit:   ${{ github.sha }}"
+          echo "╚══════════════════════════════════════════════════╝"

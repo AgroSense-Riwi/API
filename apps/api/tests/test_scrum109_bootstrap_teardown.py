@@ -14,39 +14,39 @@ def test_verify_bootstrap_script_exists_and_has_valid_bash_syntax() -> None:
 
     utilice 'set -euo pipefail' y tenga sintaxis Bash válida (CT-01).
     """
-    assert BOOTSTRAP_SCRIPT.is_file(), (
-        f"El script de verificación no existe en: {BOOTSTRAP_SCRIPT}"
-    )
+    assert BOOTSTRAP_SCRIPT.is_file(), f"El script de verificación no existe en: {BOOTSTRAP_SCRIPT}"
 
     # Verificar permisos de ejecución
-    assert os.access(BOOTSTRAP_SCRIPT, os.X_OK), (
-        "scripts/verify_bootstrap.sh debe tener permisos de ejecución (chmod +x)."
-    )
+    assert os.access(
+        BOOTSTRAP_SCRIPT, os.X_OK
+    ), "scripts/verify_bootstrap.sh debe tener permisos de ejecución (chmod +x)."
 
     script_content = BOOTSTRAP_SCRIPT.read_text(encoding="utf-8")
-    assert "set -euo pipefail" in script_content, (
-        "scripts/verify_bootstrap.sh debe incluir 'set -euo pipefail'."
-    )
-    assert "docker compose up -d --build" in script_content, (
-        "scripts/verify_bootstrap.sh debe ejecutar 'docker compose up -d --build'."
-    )
-    assert "1800" in script_content, (
-        "scripts/verify_bootstrap.sh debe validar el umbral SLA de 30 minutos (1800s)."
-    )
-    assert "/health" in script_content, (
-        "scripts/verify_bootstrap.sh debe verificar el endpoint /health de la API."
-    )
+    assert (
+        "set -euo pipefail" in script_content
+    ), "scripts/verify_bootstrap.sh debe incluir 'set -euo pipefail'."
+    assert (
+        "docker compose up -d --build" in script_content
+    ), "scripts/verify_bootstrap.sh debe ejecutar 'docker compose up -d --build'."
+    assert (
+        "1800" in script_content
+    ), "scripts/verify_bootstrap.sh debe validar el umbral SLA de 30 minutos (1800s)."
+    assert (
+        "/health" in script_content
+    ), "scripts/verify_bootstrap.sh debe verificar el endpoint /health de la API."
 
-    # Validar sintaxis con bash -n
+    # Validar sintaxis con bash -n (asegurando LF binario en Windows)
+    clean_bytes = script_content.encode("utf-8").replace(b"\r\n", b"\n").replace(b"\r", b"\n")
     result = subprocess.run(
-        ["bash", "-n", str(BOOTSTRAP_SCRIPT)],
+        ["bash", "-n"],
+        input=clean_bytes,
         capture_output=True,
-        text=True,
         check=False,
     )
-    assert result.returncode == 0, (
-        f"Error de sintaxis en scripts/verify_bootstrap.sh:\n{result.stderr}"
-    )
+    stderr_text = result.stderr.decode("utf-8", errors="replace")
+    assert (
+        result.returncode == 0
+    ), f"Error de sintaxis en scripts/verify_bootstrap.sh:\n{stderr_text}"
 
 
 def test_readme_contains_ct01_bootstrap_and_e04_teardown_commands() -> None:
@@ -69,6 +69,6 @@ def test_readme_contains_ct01_bootstrap_and_e04_teardown_commands() -> None:
     ]
 
     for snippet in required_snippets:
-        assert snippet in readme_content, (
-            f"El comando o referencia obligatoria '{snippet}' no se encontró en README.md."
-        )
+        assert (
+            snippet in readme_content
+        ), f"El comando o referencia obligatoria '{snippet}' no se encontró en README.md."
