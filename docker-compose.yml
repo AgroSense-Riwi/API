@@ -94,6 +94,24 @@ services:
       retries: 3
       start_period: 10s
 
+  simulators:
+    image: agrosense-simulators:local
+    build:
+      context: .
+      dockerfile: apps/simulators/Dockerfile
+    container_name: agrosense_simulators
+    restart: unless-stopped
+    environment:
+      RABBITMQ_URL: ${AGROSENSE_RABBITMQ_URL:-amqp://agrosense_mq:changeme@broker:5672/}
+      SIMULATOR_MODE: ${SIMULATOR_MODE:-dev}
+      SIMULATOR_FARMS_COUNT: ${SIMULATOR_FARMS_COUNT:-300}
+      SEED_VALUE: ${SEED_VALUE:-42}
+    depends_on:
+      broker:
+        condition: service_healthy
+    networks:
+      - private_subnet
+
   airflow-init:
     <<: *airflow-common
     container_name: agrosense_airflow_init
