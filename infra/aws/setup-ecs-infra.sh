@@ -262,6 +262,34 @@ aws ecs create-cluster \
 
 echo "  ↳ Cluster: ${PROJECT_NAME}-cluster"
 
+# ─── 6.5 Amazon S3 Data Lake Medallion Buckets (AGRO-11 / SCRUM-133) ─────────
+echo ""
+echo "[6.5/8] Verificando/ aprovisionando Buckets S3 Medallion (raw, trusted, refined) con SSE-S3..."
+
+S3_RAW_BUCKET="${S3_RAW_BUCKET:-${PROJECT_NAME}-raw}"
+S3_TRUSTED_BUCKET="${S3_TRUSTED_BUCKET:-${PROJECT_NAME}-trusted}"
+S3_REFINED_BUCKET="${S3_REFINED_BUCKET:-${PROJECT_NAME}-refined}"
+
+for bucket_name in "${S3_RAW_BUCKET}" "${S3_TRUSTED_BUCKET}" "${S3_REFINED_BUCKET}"; do
+    if ! aws s3api head-bucket --bucket "${bucket_name}" --region "${AWS_REGION}" 2>/dev/null; then
+        if [ "${AWS_REGION}" = "us-east-1" ]; then
+            aws s3api create-bucket --bucket "${bucket_name}" --region "${AWS_REGION}" 2>/dev/null || echo "  ↳ Bucket '${bucket_name}' ya existe o usa prefijo global."
+        else
+            aws s3api create-bucket --bucket "${bucket_name}" --region "${AWS_REGION}" \
+                --create-bucket-configuration LocationConstraint="${AWS_REGION}" 2>/dev/null || echo "  ↳ Bucket '${bucket_name}' ya existe o usa prefijo global."
+        fi
+    else
+        echo "  ↳ Bucket S3 '${bucket_name}' verificado."
+    fi
+
+    # Habilitar cifrado por defecto SSE-S3 (AES256) y bloqueo de acceso público (AC-02)
+    aws s3api put-bucket-encryption --bucket "${bucket_name}" --region "${AWS_REGION}" \
+        --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}' 2>/dev/null || true
+
+    aws s3api put-public-access-block --bucket "${bucket_name}" --region "${AWS_REGION}" \
+        --public-access-block-configuration "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true" 2>/dev/null || true
+done
+
 # ─── 7. AWS Secrets Manager (plantillas) ─────────────────────────────────────
 echo ""
 echo "[7/7] Creando secretos en AWS Secrets Manager..."
@@ -273,6 +301,9 @@ declare -A SECRETS=(
     ["agrosense/prod/jwt-secret"]="CHANGE_ME_GENERATE_SECURE_KEY"
     ["agrosense/prod/buyer-jwt-secret"]="CHANGE_ME_GENERATE_SECURE_KEY"
     ["agrosense/prod/s3-bucket"]="agrosense-datalake-prod"
+    ["agrosense/prod/s3-bucket-raw"]="${S3_RAW_BUCKET}"
+    ["agrosense/prod/s3-bucket-trusted"]="${S3_TRUSTED_BUCKET}"
+    ["agrosense/prod/s3-bucket-refined"]="${S3_REFINED_BUCKET}"
     ["agrosense/prod/postgres-user"]="agrosense_user"
     ["agrosense/prod/postgres-password"]="CHANGE_ME_GENERATE_SECURE_PASSWORD"
     ["agrosense/prod/postgres-db"]="agrosense_db"
