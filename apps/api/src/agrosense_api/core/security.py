@@ -63,3 +63,21 @@ def decode_buyer_access_token(token: str) -> dict[str, Any]:
         raise RuntimeError("AGROSENSE_BUYER_JWT_SECRET_KEY must be configured")
 
     return jwt.decode(token, secret, algorithms=["HS256"], issuer=settings.buyer_jwt_issuer)
+
+
+def create_buyer_access_token(buyer_id: Any, scopes: list[str] | None = None) -> str:
+    settings = get_settings()
+    secret = settings.buyer_jwt_secret_key.get_secret_value()
+    if not secret:
+        raise RuntimeError("AGROSENSE_BUYER_JWT_SECRET_KEY must be configured")
+
+    now = datetime.now(UTC)
+    claims: dict[str, Any] = {
+        "sub": str(buyer_id),
+        "buyer_id": str(buyer_id),
+        "iss": settings.buyer_jwt_issuer,
+        "scope": " ".join(scopes or ["traceability:read"]),
+        "iat": now,
+        "exp": now + timedelta(minutes=settings.jwt_access_token_minutes),
+    }
+    return jwt.encode(claims, secret, algorithm="HS256")

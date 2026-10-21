@@ -1,14 +1,24 @@
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel, Field
 
 from agrosense_api.core.config import get_settings
 from agrosense_api.core.rate_limit import limiter
-from agrosense_api.core.security import create_access_token, verify_password
+from agrosense_api.core.security import (
+    create_access_token,
+    create_buyer_access_token,
+    verify_password,
+)
 from agrosense_api.schemas.auth import TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
+
+
+class BuyerTokenRequest(BaseModel):
+    buyer_id: UUID = Field(description="UUID del comprador internacional")
 
 
 @router.post("/token", response_model=TokenResponse)
@@ -39,3 +49,18 @@ async def issue_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return TokenResponse(access_token=create_access_token(form_data.username))
+
+
+@router.post("/buyer-token", response_model=TokenResponse, summary="Generar token de comprador")
+@limiter.limit("10/minute")
+async def issue_buyer_token(
+    request: Request,
+    payload: BuyerTokenRequest,
+) -> TokenResponse:
+    settings = get_settings()
+    if not settings.buyer_jwt_secret_key.get_secret_value():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Buyer authentication is not configured",
+        )
+    return TokenResponse(access_token=create_buyer_access_token(payload.buyer_id))
