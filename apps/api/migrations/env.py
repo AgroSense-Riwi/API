@@ -18,7 +18,7 @@ config = context.config
 # Permitir sobrescribir sqlalchemy.url mediante variable de entorno DATABASE_URL
 database_url = os.getenv("DATABASE_URL")
 if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 # Configurar logging desde alembic.ini
 if config.config_file_name is not None:
