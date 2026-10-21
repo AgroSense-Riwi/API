@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, RedirectResponse
 
 from agrosense_api.api.v1.api import api_router
 from agrosense_api.core.config import get_settings
@@ -47,6 +47,11 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(api_router)
+
+
+@app.get("/doc", include_in_schema=False)
+def redirect_doc_to_docs() -> RedirectResponse:
+    return RedirectResponse(url="/docs")
 
 
 def _convert_schema_to_openapi_30(value: Any) -> Any:
