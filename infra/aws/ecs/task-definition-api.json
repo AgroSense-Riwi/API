@@ -25,7 +25,7 @@
         "startPeriod": 60
       },
       "environment": [
-        { "name": "SKIP_MIGRATIONS", "value": "false" },
+        { "name": "SKIP_MIGRATIONS", "value": "true" },
         { "name": "AGROSENSE_ALLOWED_ORIGINS", "value": "[\"https://your-frontend-domain.com\"]" },
         { "name": "AWS_DEFAULT_REGION", "value": "${AWS_REGION}" }
       ],

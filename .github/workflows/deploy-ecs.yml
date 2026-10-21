@@ -222,7 +222,8 @@ jobs:
               --desired-count 1 \
               --launch-type FARGATE \
               --deployment-configuration "minimumHealthyPercent=50,maximumPercent=200" \
-              --network-configuration "awsvpcConfiguration={subnets=[${{ secrets.SUBNET_1 }},${{ secrets.SUBNET_2 }}],securityGroups=[${{ secrets.API_SG }}],assignPublicIp=ENABLED}" \
+              --load-balancers "targetGroupArn=arn:aws:elasticloadbalancing:${AWS_REGION}:${ACCOUNT_ID}:targetgroup/agrosense-api-tg/9b9868b5424fbeb5,containerName=agrosense-api,containerPort=8000" \
+              --network-configuration "awsvpcConfiguration={subnets=[${{ secrets.SUBNET_1 }},${{ secrets.SUBNET_2 }}],securityGroups=[${{ secrets.API_SG }}],assignPublicIp=DISABLED}" \
               --region "${AWS_REGION}" \
               --query 'service.serviceName' \
               --output text
@@ -311,6 +312,7 @@ jobs:
           echo "╠══════════════════════════════════════════════════╣"
           echo "║  Cluster:  ${{ secrets.ECS_CLUSTER }}"
           echo "║  Service:  ${{ secrets.ECS_SERVICE_API }}"
+          echo "║  URL ALB:  http://agrosense-alb-573972328.us-east-2.elb.amazonaws.com"
           echo "║  Image:    ${{ needs.build-and-push.outputs.image_uri }}"
           echo "║  Commit:   ${{ github.sha }}"
           echo "╚══════════════════════════════════════════════════╝"
