@@ -43,15 +43,15 @@
       "secrets": [
         {
           "name": "POSTGRES_USER",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/postgres-user"
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/postgres-user-jr9PCY"
         },
         {
           "name": "POSTGRES_PASSWORD",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/postgres-password"
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/postgres-password-hMJy8X"
         },
         {
           "name": "POSTGRES_DB",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/postgres-db"
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/postgres-db-TY7qju"
         }
       ],
       "environment": [

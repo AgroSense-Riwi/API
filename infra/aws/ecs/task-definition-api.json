@@ -27,32 +27,32 @@
       "environment": [
         { "name": "SKIP_MIGRATIONS", "value": "false" },
         { "name": "AGROSENSE_ALLOWED_ORIGINS", "value": "[\"https://your-frontend-domain.com\"]" },
-        { "name": "AWS_DEFAULT_REGION", "value": "us-east-1" }
+        { "name": "AWS_DEFAULT_REGION", "value": "${AWS_REGION}" }
       ],
       "secrets": [
         {
           "name": "AGROSENSE_DATABASE_URL",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/database-url"
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/database-url-lXljxM"
         },
         {
           "name": "DATABASE_URL",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/database-url-sync"
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/database-url-sync-iLOr6K"
         },
         {
           "name": "AGROSENSE_RABBITMQ_URL",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/rabbitmq-url"
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/rabbitmq-url-skA1ZA"
         },
         {
           "name": "AGROSENSE_JWT_SECRET_KEY",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/jwt-secret"
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/jwt-secret-AJUt1i"
         },
         {
           "name": "AGROSENSE_BUYER_JWT_SECRET_KEY",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/buyer-jwt-secret"
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/buyer-jwt-secret-yT4Uk2"
         },
         {
           "name": "S3_BUCKET",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/s3-bucket"
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/s3-bucket-LXXZkV"
         }
       ],
       "logConfiguration": {

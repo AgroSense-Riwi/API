@@ -145,17 +145,37 @@ jobs:
           IMAGE_URI="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${COMMIT_SHA}"
           echo "Using IMAGE_URI: ${IMAGE_URI}"
 
-          # Reemplazar variables en el JSON
+          # Asegurar que el Log Group de CloudWatch exista para evitar AccessDenied en logs:CreateLogGroup
+          aws logs create-log-group --log-group-name "/ecs/agrosense-api" --region "${AWS_REGION}" 2>/dev/null || true
+
+          # Reemplazar variables base en el JSON
           sed -e "s|\${AWS_ACCOUNT_ID}|${ACCOUNT_ID}|g" \
               -e "s|\${AWS_REGION}|${AWS_REGION}|g" \
               infra/aws/ecs/task-definition-api.json > /tmp/task-def-base.json
 
+          # Resolver dinámicamente ARNs canónicos de Secrets Manager (incluye el sufijo aleatorio de 6 caracteres)
+          cp /tmp/task-def-base.json /tmp/task-def-resolved.json
+          SECRET_COUNT=$(jq '.containerDefinitions[0].secrets | length' /tmp/task-def-resolved.json)
+          for ((i=0; i<SECRET_COUNT; i++)); do
+            VALUE_FROM=$(jq -r ".containerDefinitions[0].secrets[$i].valueFrom" /tmp/task-def-resolved.json)
+            SECRET_NAME=$(echo "$VALUE_FROM" | sed -E 's/.*:secret:([^:]+).*/\1/')
+            REAL_ARN=$(aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region "${AWS_REGION}" --query ARN --output text 2>/dev/null || echo "")
+            if [ -n "$REAL_ARN" ]; then
+              echo "ARN resuelto para $SECRET_NAME: $REAL_ARN"
+              jq --arg idx "$i" --arg arn "$REAL_ARN" \
+                '.containerDefinitions[0].secrets[($idx | tonumber)].valueFrom = $arn' \
+                /tmp/task-def-resolved.json > /tmp/task-def-tmp.json && mv /tmp/task-def-tmp.json /tmp/task-def-resolved.json
+            else
+              echo "Manteniendo ARN existente para $SECRET_NAME: $VALUE_FROM"
+            fi
+          done
+
           jq --arg img "${IMAGE_URI}" \
              '.containerDefinitions[0].image = $img' \
-             /tmp/task-def-base.json > /tmp/task-def-api.json
+             /tmp/task-def-resolved.json > /tmp/task-def-api.json
 
           echo "Task definition verificada:"
-          jq '.containerDefinitions[0].image' /tmp/task-def-api.json
+          jq '.containerDefinitions[0].image, .containerDefinitions[0].secrets' /tmp/task-def-api.json
 
       - name: Registrar Task Definition en ECS
         id: register-task
@@ -221,6 +241,39 @@ jobs:
             --services "${SERVICE}" \
             --region "${AWS_REGION}"
           echo "✅ Servicio estabilizado y operativo."
+
+      - name: Diagnóstico detallado en caso de fallo en ECS
+        if: failure()
+        env:
+          CLUSTER: ${{ secrets.ECS_CLUSTER }}
+          SERVICE: ${{ secrets.ECS_SERVICE_API }}
+        run: |
+          echo "::error::El servicio ECS no se estabilizó. Mostrando eventos y razones de fallo..."
+          echo "=== Últimos 15 eventos del servicio ECS ==="
+          aws ecs describe-services \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}" \
+            --region "${AWS_REGION}" \
+            --query "services[0].events[0:15].[createdAt,message]" \
+            --output table || true
+
+          echo "=== Tareas detenidas recientemente y causas de salida ==="
+          STOPPED_TASKS=$(aws ecs list-tasks \
+            --cluster "${CLUSTER}" \
+            --service-name "${SERVICE}" \
+            --desired-status STOPPED \
+            --region "${AWS_REGION}" \
+            --query "taskArns[0:5]" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "${STOPPED_TASKS}" ]; then
+            aws ecs describe-tasks \
+              --cluster "${CLUSTER}" \
+              --tasks ${STOPPED_TASKS} \
+              --region "${AWS_REGION}" \
+              --query "tasks[*].[taskArn,stopCode,stoppedReason,containers[0].[name,exitCode,reason]]" \
+              --output table || true
+          fi
 
       - name: Verificar Health Check
         env:

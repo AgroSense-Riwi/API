@@ -47,11 +47,11 @@
       "secrets": [
         {
           "name": "RABBITMQ_DEFAULT_USER",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/rabbitmq-user"
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/rabbitmq-user-9o4ybv"
         },
         {
           "name": "RABBITMQ_DEFAULT_PASS",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/rabbitmq-password"
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/rabbitmq-password-zyWRJG"
         }
       ],
       "environment": [

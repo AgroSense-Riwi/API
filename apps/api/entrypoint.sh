@@ -30,22 +30,25 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 database_url = os.environ["DATABASE_URL"]
-max_retries = int(os.environ.get("DB_MAX_RETRIES", "30"))
+max_retries = int(os.environ.get("DB_MAX_RETRIES", "15"))
 retry_interval = float(os.environ.get("DB_RETRY_INTERVAL", "2"))
+connect_timeout = int(os.environ.get("DB_CONNECT_TIMEOUT", "3"))
 
-engine = create_engine(database_url, pool_pre_ping=True)
+connect_args = {"connect_timeout": connect_timeout}
+engine = create_engine(database_url, pool_pre_ping=True, connect_args=connect_args)
 
 for attempt in range(1, max_retries + 1):
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        print(f"[AgroSense Entrypoint] [INFO] PostgreSQL connection verified (attempt {attempt}/{max_retries}).")
+        print(f"[AgroSense Entrypoint] [INFO] PostgreSQL connection verified (attempt {attempt}/{max_retries}).", flush=True)
         sys.exit(0)
     except (OperationalError, SQLAlchemyError, OSError) as exc:
         print(
             f"[AgroSense Entrypoint] [WARN] Database not ready yet "
-            f"(attempt {attempt}/{max_retries}): {exc.__class__.__name__}",
+            f"(attempt {attempt}/{max_retries}): {exc.__class__.__name__}: {exc}",
             file=sys.stderr,
+            flush=True,
         )
         if attempt == max_retries:
             sys.exit(1)
