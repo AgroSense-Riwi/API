@@ -80,9 +80,7 @@ async def get_batch_trace(
     ]
 
     buyer_name = (
-        buyer_contract.buyer.buyer_name
-        if buyer_contract.buyer
-        else "Comprador Internacional"
+        buyer_contract.buyer.buyer_name if buyer_contract.buyer else "Comprador Internacional"
     )
 
     return TraceabilityResponse(

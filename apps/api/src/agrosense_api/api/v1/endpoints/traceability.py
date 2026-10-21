@@ -21,7 +21,9 @@ router = APIRouter(prefix="/traceability", tags=["Compradores"])
     "/batches",
     response_model=list[BatchSummaryResponse],
     summary="Listar lotes del comprador",
-    description="Consulta todos los lotes de café asignados contractualmente al comprador autenticado.",
+    description=(
+        "Consulta todos los lotes de café asignados contractualmente " "al comprador autenticado."
+    ),
 )
 async def list_buyer_batches(
     session: Annotated[AsyncSession, Depends(get_db)],
@@ -34,7 +36,9 @@ async def list_buyer_batches(
     "/{batch_code}",
     response_model=TraceabilityResponse,
     summary="Consultar trazabilidad de un lote",
-    description="Consulta comercial de certificado y trazabilidad de un lote de exportación propio.",
+    description=(
+        "Consulta comercial de certificado y trazabilidad de un lote " "de exportación propio."
+    ),
 )
 async def read_traceability(
     batch_code: Annotated[

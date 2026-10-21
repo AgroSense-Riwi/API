@@ -1,27 +1,29 @@
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, UTC
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
-
-from agrosense_api.script import app
 from agrosense_api.core.config import get_settings
 from agrosense_api.core.security import create_buyer_access_token
 from agrosense_api.schemas.traceability import (
     BatchSummaryResponse,
     TraceabilityResponse,
 )
+from agrosense_api.script import app
 from agrosense_api.services.traceability import (
     TraceabilityForbiddenError,
     TraceabilityNotFoundError,
 )
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
 def setup_buyer_secret(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AGROSENSE_BUYER_JWT_SECRET_KEY", "test_buyer_secret_key_at_least_32_chars_long")
+    monkeypatch.setenv(
+        "AGROSENSE_BUYER_JWT_SECRET_KEY",
+        "test_buyer_secret_key_at_least_32_chars_long",  # noqa: S105
+    )
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -53,7 +55,7 @@ def test_issue_buyer_token(client: TestClient, buyer_id: uuid.UUID) -> None:
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
-    assert data["token_type"] == "bearer"
+    assert data["token_type"] == "bearer"  # noqa: S105
 
 
 def test_traceability_requires_auth(client: TestClient) -> None:
@@ -90,9 +92,7 @@ def test_list_buyer_batches_success(
         assert data[0]["batch_code"] == "LOTE-EXP-001"
 
 
-def test_get_batch_trace_success(
-    client: TestClient, buyer_id: uuid.UUID, buyer_token: str
-) -> None:
+def test_get_batch_trace_success(client: TestClient, buyer_id: uuid.UUID, buyer_token: str) -> None:
     fake_trace = TraceabilityResponse(
         batch_id=uuid.uuid4(),
         batch_code="LOTE-EXP-001",
