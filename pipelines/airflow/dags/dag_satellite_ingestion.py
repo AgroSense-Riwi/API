@@ -109,7 +109,7 @@ except ImportError:
                             self.upstream_list.append(arg)
                         if self not in arg.downstream_list:
                             arg.downstream_list.append(self)
-                    elif isinstance(arg, (list, tuple)):
+                    elif isinstance(arg, list | tuple):
                         for item in arg:
                             if isinstance(item, _BaseTaskMock):
                                 if item not in self.upstream_list:
