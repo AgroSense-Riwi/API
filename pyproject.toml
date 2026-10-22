@@ -18,6 +18,9 @@ dev = [
     "pytest-cov",
     "pre-commit",
     "faker>=40.43.0",
+    "requests>=2.34.2",
+    "boto3>=1.43.117",
+    "requests-mock>=1.12.1",
 ]
 
 [tool.ruff]
