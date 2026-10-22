@@ -185,13 +185,14 @@ aws ec2 authorize-security-group-ingress --group-id "${ALB_SG}" --protocol tcp -
 
 API_SG=$(aws ec2 create-security-group \
     --group-name "${PROJECT_NAME}-api-sg" \
-    --description "API - allows traffic from internet directly on port 8000" \
+    --description "API - allows traffic from ALB only on port 8000 (AC-02)" \
     --vpc-id "${VPC_ID}" \
     --region "${AWS_REGION}" --query 'GroupId' --output text 2>/dev/null || \
     aws ec2 describe-security-groups --filters "Name=group-name,Values=${PROJECT_NAME}-api-sg" "Name=vpc-id,Values=${VPC_ID}" \
     --region "${AWS_REGION}" --query 'SecurityGroups[0].GroupId' --output text)
 
-aws ec2 authorize-security-group-ingress --group-id "${API_SG}" --protocol tcp --port 8000 --cidr 0.0.0.0/0 --region "${AWS_REGION}" 2>/dev/null || true
+aws ec2 authorize-security-group-ingress --group-id "${API_SG}" --protocol tcp --port 8000 --source-group "${ALB_SG}" --region "${AWS_REGION}" 2>/dev/null || true
+aws ec2 revoke-security-group-ingress --group-id "${API_SG}" --protocol tcp --port 8000 --cidr 0.0.0.0/0 --region "${AWS_REGION}" 2>/dev/null || true
 
 DB_SG=$(aws ec2 create-security-group \
     --group-name "${PROJECT_NAME}-db-sg" \
@@ -249,18 +250,92 @@ aws ec2 authorize-security-group-ingress --group-id "${EFS_SG}" --protocol tcp -
 aws efs create-mount-target --file-system-id "${EFS_ID}" --subnet-id "${PRIV_SUBNET_1}" --security-groups "${EFS_SG}" --region "${AWS_REGION}" 2>/dev/null || true
 aws efs create-mount-target --file-system-id "${EFS_ID}" --subnet-id "${PRIV_SUBNET_2}" --security-groups "${EFS_SG}" --region "${AWS_REGION}" 2>/dev/null || true
 
-# ─── 6. ECS Cluster ──────────────────────────────────────────────────────────
+# ─── 5.5 VPC Endpoint S3 Gateway & Etiquetado Global (AGRO-10 / SCRUM-131 / CT-03) ───
 echo ""
-echo "[6/7] Creando ECS Cluster..."
+echo "[5.5/8] Configurando S3 Gateway VPC Endpoint y etiquetas globales obligatorias (CT-03)..."
+
+aws ec2 create-vpc-endpoint \
+    --vpc-id "${VPC_ID}" \
+    --vpc-endpoint-type Gateway \
+    --service-name "com.amazonaws.${AWS_REGION}.s3" \
+    --route-table-ids "${PUB_RT}" "${PRIV_RT}" \
+    --tag-specifications "ResourceType=vpc-endpoint,Tags=[{Key=Name,Value=${PROJECT_NAME}-s3-vpce},{Key=Project,Value=AgroSense-Cafe},{Key=Environment,Value=production},{Key=ManagedBy,Value=IaC}]" \
+    --region "${AWS_REGION}" 2>/dev/null || echo "  ↳ S3 Gateway VPC Endpoint ya existe."
+
+aws ec2 create-tags \
+    --resources "${VPC_ID}" "${PUB_SUBNET_1}" "${PUB_SUBNET_2}" "${PRIV_SUBNET_1}" "${PRIV_SUBNET_2}" "${ALB_SG}" "${API_SG}" "${DB_SG}" "${BROKER_SG}" "${EFS_SG}" "${NAT_GW_ID}" "${PUB_RT}" "${PRIV_RT}" \
+    --tags Key=Project,Value=AgroSense-Cafe Key=Environment,Value=production Key=ManagedBy,Value=IaC Key=Epic,Value=EP-03 \
+    --region "${AWS_REGION}" 2>/dev/null || true
+
+# ─── 6. ECS Cluster, ALB & Auto-Scaling (AGRO-13 / SCRUM-138 / SCRUM-140) ────
+echo ""
+echo "[6/8] Creando ECS Cluster, Application Load Balancer y Auto-Scaling..."
 
 aws ecs create-cluster \
     --cluster-name "${PROJECT_NAME}-cluster" \
     --capacity-providers FARGATE \
     --default-capacity-provider-strategy capacityProvider=FARGATE,weight=1 \
     --setting name=containerInsights,value=enabled \
+    --tags key=Project,value=AgroSense-Cafe key=Environment,value=production key=ManagedBy,value=IaC \
     --region "${AWS_REGION}" 2>/dev/null || echo "  ↳ Cluster ya existe."
 
-echo "  ↳ Cluster: ${PROJECT_NAME}-cluster"
+ALB_ARN=$(aws elbv2 create-load-balancer \
+    --name "${PROJECT_NAME}-alb" \
+    --subnets "${PUB_SUBNET_1}" "${PUB_SUBNET_2}" \
+    --security-groups "${ALB_SG}" \
+    --scheme internet-facing \
+    --type application \
+    --region "${AWS_REGION}" --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || \
+    aws elbv2 describe-load-balancers --names "${PROJECT_NAME}-alb" \
+    --region "${AWS_REGION}" --query 'LoadBalancers[0].LoadBalancerArn' --output text)
+
+TG_ARN=$(aws elbv2 create-target-group \
+    --name "${PROJECT_NAME}-api-tg" \
+    --protocol HTTP --port 8000 \
+    --vpc-id "${VPC_ID}" \
+    --target-type ip \
+    --health-check-path "/health" \
+    --health-check-interval-seconds 30 \
+    --healthy-threshold-count 2 \
+    --unhealthy-threshold-count 3 \
+    --region "${AWS_REGION}" --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null || \
+    aws elbv2 describe-target-groups --names "${PROJECT_NAME}-api-tg" \
+    --region "${AWS_REGION}" --query 'TargetGroups[0].TargetGroupArn' --output text)
+
+aws elbv2 create-listener \
+    --load-balancer-arn "${ALB_ARN}" \
+    --protocol HTTP --port 80 \
+    --default-actions Type=forward,TargetGroupArn="${TG_ARN}" \
+    --region "${AWS_REGION}" 2>/dev/null || true
+
+# Registrar Auto-Scaling para ECS Fargate (CPU 70% y Memoria 75% - SCRUM-140)
+aws application-autoscaling register-scalable-target \
+    --service-namespace ecs \
+    --resource-id "service/${PROJECT_NAME}-cluster/${PROJECT_NAME}-api-service" \
+    --scalable-dimension ecs:service:DesiredCount \
+    --min-capacity 1 \
+    --max-capacity 4 \
+    --region "${AWS_REGION}" 2>/dev/null || true
+
+aws application-autoscaling put-scaling-policy \
+    --policy-name "${PROJECT_NAME}-api-cpu-70-scaling" \
+    --service-namespace ecs \
+    --resource-id "service/${PROJECT_NAME}-cluster/${PROJECT_NAME}-api-service" \
+    --scalable-dimension ecs:service:DesiredCount \
+    --policy-type TargetTrackingScaling \
+    --target-tracking-scaling-policy-configuration '{"TargetValue":70.0,"PredefinedMetricSpecification":{"PredefinedMetricType":"ECSServiceAverageCPUUtilization"},"ScaleOutCooldown":60,"ScaleInCooldown":120}' \
+    --region "${AWS_REGION}" 2>/dev/null || true
+
+aws application-autoscaling put-scaling-policy \
+    --policy-name "${PROJECT_NAME}-api-memory-75-scaling" \
+    --service-namespace ecs \
+    --resource-id "service/${PROJECT_NAME}-cluster/${PROJECT_NAME}-api-service" \
+    --scalable-dimension ecs:service:DesiredCount \
+    --policy-type TargetTrackingScaling \
+    --target-tracking-scaling-policy-configuration '{"TargetValue":75.0,"PredefinedMetricSpecification":{"PredefinedMetricType":"ECSServiceAverageMemoryUtilization"},"ScaleOutCooldown":60,"ScaleInCooldown":120}' \
+    --region "${AWS_REGION}" 2>/dev/null || true
+
+echo "  ↳ Cluster: ${PROJECT_NAME}-cluster | ALB: ${ALB_ARN}"
 
 # ─── 6.5 Amazon S3 Data Lake Medallion Buckets (AGRO-11 / SCRUM-133) ─────────
 echo ""
@@ -350,7 +425,8 @@ echo "  AWS_ACCOUNT_ID  = $(aws sts get-caller-identity --query Account --output
 echo "  AWS_REGION      = ${AWS_REGION}"
 echo "  ECS_CLUSTER     = ${PROJECT_NAME}-cluster"
 echo "  ECS_SERVICE_API = agrosense-api-service"
-echo "  SUBNET_1        = ${PUB_SUBNET_1}"
-echo "  SUBNET_2        = ${PUB_SUBNET_2}"
+echo "  SUBNET_1        = ${PRIV_SUBNET_1}"
+echo "  SUBNET_2        = ${PRIV_SUBNET_2}"
 echo "  API_SG          = ${API_SG}"
+echo "  ALB_TG_ARN      = ${TG_ARN}"
 echo ""
