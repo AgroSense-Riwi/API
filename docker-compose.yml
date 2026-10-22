@@ -172,6 +172,7 @@ services:
       airflow-init:
         condition: service_completed_successfully
     networks:
+      - public_subnet
       - private_subnet
     healthcheck:
       test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\""]
