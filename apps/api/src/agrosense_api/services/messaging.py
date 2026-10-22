@@ -284,7 +284,7 @@ class FastTelemetryConsumerWorker:
         report = ConsumerBatchReport()
 
         try:
-            if isinstance(raw_payload, (str, bytes)):
+            if isinstance(raw_payload, str | bytes):
                 decoded = json.loads(raw_payload)
             else:
                 decoded = raw_payload

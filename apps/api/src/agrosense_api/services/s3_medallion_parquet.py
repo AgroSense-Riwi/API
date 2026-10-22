@@ -230,7 +230,7 @@ class RawToTrustedParquetConverter:
         raw_payload: list[dict[str, Any]] | dict[str, Any] | str | bytes,
     ) -> dict[str, bytes]:
         """Convert raw JSON payload into Snappy Parquet buffers keyed by `dt=YYYY-MM-DD`."""
-        if isinstance(raw_payload, (str, bytes)):
+        if isinstance(raw_payload, str | bytes):
             parsed = json.loads(raw_payload)
         else:
             parsed = raw_payload
