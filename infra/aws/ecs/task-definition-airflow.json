@@ -1,0 +1,56 @@
+{
+  "family": "agrosense-airflow",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/rol_1_ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/rol_2_agrosense-api-task-role",
+  "containerDefinitions": [
+    {
+      "name": "airflow-standalone-scheduler",
+      "image": "apache/airflow:3.3.2",
+      "essential": true,
+      "command": ["standalone"],
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "AIRFLOW__CORE__EXECUTOR", "value": "LocalExecutor" },
+        { "name": "AIRFLOW__CORE__LOAD_EXAMPLES", "value": "false" },
+        { "name": "AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION", "value": "false" },
+        { "name": "AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS", "value": "true" },
+        { "name": "AWS_DEFAULT_REGION", "value": "${AWS_REGION}" }
+      ],
+      "secrets": [
+        {
+          "name": "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/database-url-sync-iLOr6K"
+        },
+        {
+          "name": "AIRFLOW__CORE__FERNET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/jwt-secret-AJUt1i"
+        },
+        {
+          "name": "AIRFLOW__WEBSERVER__SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/jwt-secret-AJUt1i"
+        },
+        {
+          "name": "S3_BUCKET_BRONZE",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/s3-bucket-raw"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/agrosense-airflow",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "airflow"
+        }
+      }
+    }
+  ]
+}
