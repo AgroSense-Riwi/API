@@ -276,9 +276,9 @@ def test_def03_and_rnf01_burst_buffer_chronological_order_and_batch_id() -> None
         datetime.fromisoformat(p.reading_timestamp.replace("Z", "+00:00")) for p in burst_payloads
     ]
     for i in range(len(parsed_timestamps) - 1):
-        assert parsed_timestamps[i] <= parsed_timestamps[i + 1], (
-            f"Inversión temporal detectada en índice {i}"
-        )
+        assert (
+            parsed_timestamps[i] <= parsed_timestamps[i + 1]
+        ), f"Inversión temporal detectada en índice {i}"
 
 
 def test_depleted_battery_injection() -> None:
