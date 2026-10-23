@@ -1,0 +1,81 @@
+{
+  "vhosts": [
+    { "name": "/" },
+    { "name": "/agrosense" }
+  ],
+  "exchanges": [
+    {
+      "name": "agrosense.ingest.exchange",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false
+    },
+    {
+      "name": "agrosense.dlx.exchange",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false
+    }
+  ],
+  "queues": [
+    {
+      "name": "telemetry.raw.queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "agrosense.dlx.exchange",
+        "x-dead-letter-routing-key": "dlq.telemetry",
+        "x-message-ttl": 604800000
+      }
+    },
+    {
+      "name": "climate.ingest.queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "agrosense.dlx.exchange",
+        "x-dead-letter-routing-key": "dlq.climate"
+      }
+    },
+    {
+      "name": "dead.letter.queue",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false
+    }
+  ],
+  "bindings": [
+    {
+      "source": "agrosense.ingest.exchange",
+      "vhost": "/",
+      "destination": "telemetry.raw.queue",
+      "destination_type": "queue",
+      "routing_key": "telemetry.block.#"
+    },
+    {
+      "source": "agrosense.ingest.exchange",
+      "vhost": "/",
+      "destination": "climate.ingest.queue",
+      "destination_type": "queue",
+      "routing_key": "climate.daily.#"
+    },
+    {
+      "source": "agrosense.dlx.exchange",
+      "vhost": "/",
+      "destination": "dead.letter.queue",
+      "destination_type": "queue",
+      "routing_key": "dlq.telemetry"
+    },
+    {
+      "source": "agrosense.dlx.exchange",
+      "vhost": "/",
+      "destination": "dead.letter.queue",
+      "destination_type": "queue",
+      "routing_key": "dlq.climate"
+    }
+  ]
+}

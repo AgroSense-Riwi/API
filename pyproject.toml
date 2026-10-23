@@ -21,6 +21,7 @@ dev = [
     "requests>=2.34.2",
     "boto3>=1.43.117",
     "requests-mock>=1.12.1",
+    "pyarrow>=26.0.0",
 ]
 
 [tool.ruff]
