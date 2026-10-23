@@ -42,6 +42,7 @@ except ImportError:
 
 # Import S3 Bronze Writer
 try:
+    # pyrefly: ignore[missing-import]
     from utils.s3_bronze_writer import S3BronzeWriter
 except ImportError:
     from pipelines.airflow.plugins.utils.s3_bronze_writer import S3BronzeWriter
@@ -81,10 +82,11 @@ def fetch_single_point_nasa_power(
     """
     clean_date = date_str.replace("-", "")
     params_list = parameters or DEFAULT_PARAMETERS
+    nasa_api_params = [("T2M" if p == "T2M_MEAN" else p) for p in params_list]
     http = session or requests.Session()
 
     query_params = {
-        "parameters": ",".join(params_list),
+        "parameters": ",".join(nasa_api_params),
         "community": "AG",
         "longitude": round(float(longitude), 4),
         "latitude": round(float(latitude), 4),

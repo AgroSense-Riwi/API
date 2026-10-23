@@ -165,7 +165,7 @@ class TestNasaPowerIngestion:
             last_request = m.last_request
             params_requested = last_request.qs["parameters"][0].upper()
             assert "PRECTOTCORR" in params_requested
-            assert "T2M_MEAN" in params_requested
+            assert "T2M" in params_requested
             assert "ALLSKY_SFC_SW_DWN" in params_requested
             assert "RH2M" in params_requested
             assert last_request.qs["community"][0].upper() == "AG"
