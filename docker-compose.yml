@@ -1,11 +1,13 @@
 x-airflow-common: &airflow-common
-  image: apache/airflow:2.9.3-python3.12
+  image: apache/airflow:3.3.2
   user: "${AIRFLOW_UID:-50000}:0"
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${AIRFLOW_DB_NAME:-airflow_db}
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY:?AIRFLOW__CORE__FERNET_KEY is required}
     AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY:?AIRFLOW__WEBSERVER__SECRET_KEY is required}
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY:?AIRFLOW__WEBSERVER__SECRET_KEY is required}
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-changeme}
@@ -119,19 +121,7 @@ services:
     command:
       - -c
       - |
-        airflow db migrate &&
-        airflow users create \
-          --username "$${AIRFLOW_ADMIN_USER}" \
-          --password "$${AIRFLOW_ADMIN_PASSWORD}" \
-          --firstname Admin \
-          --lastname AgroSense \
-          --role Admin \
-          --email "$${AIRFLOW_ADMIN_EMAIL:-admin@agrosense.local}"
-    environment:
-      <<: *airflow-common-env
-      AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:?AIRFLOW_ADMIN_USER is required}
-      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?AIRFLOW_ADMIN_PASSWORD is required}
-      AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@agrosense.local}
+        airflow db migrate
     depends_on:
       db:
         condition: service_healthy
@@ -142,7 +132,7 @@ services:
   airflow-webserver:
     <<: *airflow-common
     container_name: agrosense_airflow_webserver
-    command: webserver
+    command: api-server
     restart: unless-stopped
     ports:
       - "${AIRFLOW_PORT:-8080}:8080"
@@ -155,7 +145,7 @@ services:
       - public_subnet
       - private_subnet
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v2/monitor/health"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -180,6 +170,19 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: agrosense_airflow_dag_processor
+    command: dag-processor
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    networks:
+      - private_subnet
 
 networks:
   public_subnet:
