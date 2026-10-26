@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Annotated
 from uuid import UUID
 
@@ -70,7 +71,28 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions",
         )
-    return AuthenticatedUser(username=username, scopes=token_scopes)
+    role = claims.get("role", "ADMIN")
+    return AuthenticatedUser(username=username, role=role, scopes=token_scopes)
+
+
+def require_roles(*allowed_roles: str) -> Callable[..., AuthenticatedUser]:
+    """Dependency factory para control de acceso basado en roles (RBAC).
+
+    Valida que el usuario autenticado posea uno de los roles autorizados.
+    Lanza HTTP 403 Forbidden si el rol no coincide.
+    """
+
+    async def role_checker(
+        current_user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    ) -> AuthenticatedUser:
+        if current_user.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Operation not permitted for role '{current_user.role}'",
+            )
+        return current_user
+
+    return role_checker
 
 
 async def get_current_buyer_id(

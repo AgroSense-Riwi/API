@@ -30,17 +30,23 @@ def verify_password(password: str, password_hash: str) -> bool:
     return _get_password_context().verify(password, password_hash)
 
 
-def create_access_token(subject: str) -> str:
+def create_access_token(
+    subject: str,
+    role: str = "ADMIN",
+    scopes: list[str] | None = None,
+) -> str:
     settings = get_settings()
     secret = settings.jwt_secret_key.get_secret_value()
     if not secret:
         raise RuntimeError("AGROSENSE_JWT_SECRET_KEY must be configured")
 
     now = datetime.now(UTC)
+    active_scopes = scopes if scopes is not None else settings.auth_scopes
     claims: dict[str, Any] = {
         "sub": subject,
+        "role": role,
         "iss": settings.jwt_issuer,
-        "scope": " ".join(settings.auth_scopes),
+        "scope": " ".join(active_scopes),
         "iat": now,
         "exp": now + timedelta(minutes=settings.jwt_access_token_minutes),
     }
@@ -75,6 +81,7 @@ def create_buyer_access_token(buyer_id: Any, scopes: list[str] | None = None) ->
     claims: dict[str, Any] = {
         "sub": str(buyer_id),
         "buyer_id": str(buyer_id),
+        "role": "BUYER",
         "iss": settings.buyer_jwt_issuer,
         "scope": " ".join(scopes or ["traceability:read"]),
         "iat": now,
