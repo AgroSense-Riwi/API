@@ -1,8 +1,10 @@
 """AgroSense Café — Traceability Certificate, Water Footprint and Public Validator.
 
 Implements business logic for:
-- SCRUM-166: Cryptographic JSON Traceability Certificate Builder with Embedded GeoJSON Farm Polygons.
-- SCRUM-167: Water Footprint Calculation Module (Direct Irrigation + Satellite Rain per Kg Coffee).
+- SCRUM-166: Cryptographic JSON Traceability Certificate Builder
+  with Embedded GeoJSON Farm Polygons.
+- SCRUM-167: Water Footprint Calculation Module
+  (Direct Irrigation + Satellite Rain per Kg Coffee).
 - SCRUM-168: Public Verification API Endpoint and Digital Certificate Hash Validator.
 """
 
@@ -21,7 +23,8 @@ from uuid import UUID
 class WaterFootprintMetrics:
     """Métricas de huella hídrica (SCRUM-167).
 
-    Calcula la huella azul (riego directo) y verde (lluvia satelital capturada) en Litros por Kilogramo de café.
+    Calcula la huella azul (riego directo) y verde (lluvia satelital)
+    en Litros por Kilogramo de café.
     """
 
     direct_irrigation_liters: Decimal
@@ -198,16 +201,21 @@ class PublicCertificateValidator:
 
         # Reconstruir objeto sin hash para verificar integridad
         water_dict = certificate_payload.get("water_footprint", {})
+        buyer_id_raw = certificate_payload.get("buyer_id")
+        buyer_uuid = UUID(buyer_id_raw) if buyer_id_raw else None
+        cupping_raw = certificate_payload.get("cupping_score")
+        cupping_val = Decimal(str(cupping_raw)) if cupping_raw is not None else None
+
         reconstructed = DigitalTraceabilityCertificate(
             certificate_id=certificate_payload.get("certificate_id", ""),
             batch_id=UUID(certificate_payload.get("batch_id")),
             batch_code=certificate_payload.get("batch_code", ""),
             issued_at=certificate_payload.get("issued_at", ""),
             issuer=certificate_payload.get("issuer", ""),
-            buyer_id=UUID(certificate_payload["buyer_id"]) if certificate_payload.get("buyer_id") else None,
+            buyer_id=buyer_uuid,
             buyer_name=certificate_payload.get("buyer_name"),
             total_weight_kg=Decimal(str(certificate_payload.get("total_weight_kg", "0"))),
-            cupping_score=Decimal(str(certificate_payload["cupping_score"])) if certificate_payload.get("cupping_score") is not None else None,
+            cupping_score=cupping_val,
             water_footprint=water_dict,
             farms=certificate_payload.get("farms", []),
         )
