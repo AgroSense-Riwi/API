@@ -88,7 +88,10 @@ class SparkResourceAllocationOptimizer:
         usable_cores_per_node = max(cores_per_node - 1, 1)
 
         # Usar 4 ó 5 cores por executor (regla dorada de Spark para throughput en S3)
-        cores_per_executor = 4 if usable_cores_per_node % 4 == 0 or usable_cores_per_node >= 8 else min(usable_cores_per_node, 5)
+        if usable_cores_per_node % 4 == 0 or usable_cores_per_node >= 8:
+            cores_per_executor = 4
+        else:
+            cores_per_executor = min(usable_cores_per_node, 5)
 
         executors_per_node = usable_cores_per_node // cores_per_executor
         if executors_per_node == 0:

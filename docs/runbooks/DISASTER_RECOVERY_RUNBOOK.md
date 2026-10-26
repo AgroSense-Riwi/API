@@ -1,7 +1,7 @@
-# AgroSense Café — Operational Runbook & Disaster Recovery Protocol
-**Jira Reference:** `SCRUM-189` / Story `AGRO-28` (`SCRUM-47`)  
-**Compliance Standards:** `E-15`, `RNF-04`, `CT-05`  
-**Classification:** Critical Infrastructure & Production Operations  
+﻿# AgroSense Café — Operational Runbook & Disaster Recovery Protocol
+**Jira Reference:** `SCRUM-189` / Story `AGRO-28` (`SCRUM-47`)
+**Compliance Standards:** `E-15`, `RNF-04`, `CT-05`
+**Classification:** Critical Infrastructure & Production Operations
 
 ---
 
@@ -24,7 +24,7 @@ This Operational Runbook establishes the standard operating procedures (SOP), au
   # Trigger manual logical dump of traceability database
   pg_dump -h "${DB_HOST}" -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" \
     --format=custom --compress=9 --file="/backups/agrosense_$(date +%Y%m%d_%H%M%S).dump"
-  
+
   # Sync to secure S3 Cold Storage bucket with KMS Server-Side Encryption
   aws s3 cp /backups/ "s3://${BACKUP_S3_BUCKET}/postgres/" --recursive --sse aws:kms --sse-kms-key-id "${KMS_KEY_ARN}"
   ```

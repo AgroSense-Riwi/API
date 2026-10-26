@@ -1,7 +1,7 @@
-# AgroSense Café — System Startup, Shutdown & Environment Maintenance Procedures
-**Jira Reference:** `SCRUM-191` / Story `AGRO-28` (`SCRUM-47`)  
-**Compliance Standards:** `E-15`, `RNF-04`, `CT-05`  
-**Audience:** Site Reliability Engineers, DevOps & Software Maintainers  
+﻿# AgroSense Café — System Startup, Shutdown & Environment Maintenance Procedures
+**Jira Reference:** `SCRUM-191` / Story `AGRO-28` (`SCRUM-47`)
+**Compliance Standards:** `E-15`, `RNF-04`, `CT-05`
+**Audience:** Site Reliability Engineers, DevOps & Software Maintainers
 
 ---
 

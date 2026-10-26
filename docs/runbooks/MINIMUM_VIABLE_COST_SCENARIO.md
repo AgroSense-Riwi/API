@@ -1,13 +1,13 @@
-# AgroSense Café — Minimum Viable Cost Operating Scenario ($5–$48/month)
-**Jira Reference:** `SCRUM-190` / Story `AGRO-28` (`SCRUM-47`)  
-**Compliance Standards:** `E-15`, `RNF-04`, `CT-05`  
-**Target Environment:** Staging, Low-Volume Production & Pilot Cooperatives  
+﻿# AgroSense Café — Minimum Viable Cost Operating Scenario ($5–$48/month)
+**Jira Reference:** `SCRUM-190` / Story `AGRO-28` (`SCRUM-47`)
+**Compliance Standards:** `E-15`, `RNF-04`, `CT-05`
+**Target Environment:** Staging, Low-Volume Production & Pilot Cooperatives
 
 ---
 
 ## 1. Cost Optimization Architectural Philosophy
 
-To support smallholder coffee cooperatives and agricultural pilot deployments, the AgroSense platform architecture incorporates a **Zero-Idle-Cost** and **Fargate Spot / Serverless Tiering** strategy. 
+To support smallholder coffee cooperatives and agricultural pilot deployments, the AgroSense platform architecture incorporates a **Zero-Idle-Cost** and **Fargate Spot / Serverless Tiering** strategy.
 
 This guide defines the resource allocation, autoscaling limits, and configuration switches required to operate the complete platform between **$5.00 USD/month** (minimal testing footprint) and **$48.00 USD/month** (full end-to-end multi-tenant pilot).
 

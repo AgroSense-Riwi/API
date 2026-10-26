@@ -14,7 +14,9 @@ def test_verify_bootstrap_script_exists_and_has_valid_bash_syntax() -> None:
 
     utilice 'set -euo pipefail' y tenga sintaxis Bash válida (CT-01).
     """
-    assert BOOTSTRAP_SCRIPT.is_file(), f"El script de verificación no existe en: {BOOTSTRAP_SCRIPT}"
+    assert (
+        BOOTSTRAP_SCRIPT.is_file()
+    ), f"El script de verificación no existe en: {BOOTSTRAP_SCRIPT}"
 
     # Verificar permisos de ejecución
     assert os.access(
