@@ -61,7 +61,7 @@ def test_origin_volume_verification_discrepancy_fails() -> None:
 
 
 def test_forest_reserve_overlap_detection_compliant() -> None:
-    """RN-09 / SCRUM-159: Finca sin intersección espacial con reserva resulta en estado compliant."""
+    """RN-09 / SCRUM-159: Finca sin intersección espacial con reserva resulta compliant."""
     farm_id = uuid4()
     res = ForestReserveSpatialIntersectionEngine.evaluate_farm_polygons(
         farm_id=farm_id,

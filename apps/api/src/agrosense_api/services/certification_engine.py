@@ -1,7 +1,8 @@
 """AgroSense Café — Batch Certification Rules and Forest Reserves Discarding Engine.
 
 Implements business logic for:
-- SCRUM-159: PostGIS Spatial Intersection Engine to Detect Farm Overlaps with Protected Forest Reserves (RN-09).
+- SCRUM-159: PostGIS Spatial Intersection Engine to Detect Farm Overlaps with Protected Forest
+  Reserves (RN-09).
 - SCRUM-160: 100% Origin Volume Verification Rule Engine for Export Lot Batches (RN-08).
 - SCRUM-161: Batch Certification Workflow State Machine (EN_PROCESO, CERTIFICADO, RECHAZADO).
 """
@@ -110,7 +111,9 @@ class OriginVolumeVerificationRuleEngine:
     ) -> OriginVolumeVerificationResult:
         """Verifica que la sumatoria de entregas iguale exactamente el peso total del lote."""
         if total_weight_kg <= Decimal("0.00"):
-            raise ValueError("El peso total del lote debe ser un valor positivo estrictamente mayor a 0.")
+            raise ValueError(
+                "El peso total del lote debe ser un valor positivo estrictamente mayor a 0."
+            )
 
         sum_contributed = Decimal("0.00")
         for c in compositions:
@@ -132,7 +135,7 @@ class OriginVolumeVerificationRuleEngine:
 
 
 class BatchCertificationStateMachine:
-    """Máquina de estados finita para la certificación y autorización de exportación (SCRUM-161)."""
+    """Máquina de estados para la certificación y autorización de exportación (SCRUM-161)."""
 
     @classmethod
     def evaluate_batch(
@@ -167,16 +170,17 @@ class BatchCertificationStateMachine:
 
         if not vol_result.is_100_percent_traced:
             rejection_reasons.append(
-                f"Violación RN-08: El lote no alcanza el 100% de trazabilidad de origen "
-                f"(registrado: {vol_result.traceability_percentage}% con discrepancia de {vol_result.discrepancy_kg} kg)."
+                "Violación RN-08: El lote no alcanza el 100% de trazabilidad de origen "
+                f"(registrado: {vol_result.traceability_percentage}% con "
+                f"discrepancia de {vol_result.discrepancy_kg} kg)."
             )
 
         violating_reserves = [o for o in overlap_results if not o.is_compliant]
         if violating_reserves:
             for vr in violating_reserves:
                 rejection_reasons.append(
-                    f"Violación RN-09: Finca {vr.farm_id} posee solapamiento con la reserva protegida "
-                    f"'{vr.reserve_name}' ({vr.overlap_area_hectares} ha)."
+                    f"Violación RN-09: Finca {vr.farm_id} posee solapamiento con la reserva "
+                    f"protegida '{vr.reserve_name}' ({vr.overlap_area_hectares} ha)."
                 )
 
         if rejection_reasons:
