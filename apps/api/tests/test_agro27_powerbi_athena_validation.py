@@ -3,7 +3,7 @@ Dashboard de analítica Power BI, conector Athena e integración end-to-end.
 
 Cubre:
 - SCRUM-186: Configuración del conector DirectQuery / Import vía Athena y PostgreSQL.
-- SCRUM-187: Especificación de dashboards visuales de trazabilidad, riesgos agronómicos y huella hídrica.
+- SCRUM-187: Dashboards visuales de trazabilidad, riesgos agronómicos y huella hídrica.
 - SCRUM-188: Visualizador cartográfico PostGIS y filtrado RLS de compradores.
 - SCRUM-200: Configuración de AWS Glue Catalog y Athena sobre el bucket S3 Gold.
 - SCRUM-201: Configuración de autenticación del conector ODBC de Athena en Power BI Desktop.

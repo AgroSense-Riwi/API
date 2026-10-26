@@ -1,7 +1,7 @@
-# AgroSense Café — Power BI Analytics, Athena Connector & Dashboard Setup Guide
-**Jira References:** `SCRUM-46` (`SCRUM-186`, `SCRUM-187`, `SCRUM-188`, `SCRUM-200`, `SCRUM-201`)  
-**Target Environment:** Power BI Desktop / Power BI Service / Amazon Athena (ODBC)  
-**Catalog Database:** `agrosense_datalake` (S3 Gold Layer: `s3://datalakeagrosense/gold/`)  
+﻿# AgroSense Café — Power BI Analytics, Athena Connector & Dashboard Setup Guide
+**Jira References:** `SCRUM-46` (`SCRUM-186`, `SCRUM-187`, `SCRUM-188`, `SCRUM-200`, `SCRUM-201`)
+**Target Environment:** Power BI Desktop / Power BI Service / Amazon Athena (ODBC)
+**Catalog Database:** `agrosense_datalake` (S3 Gold Layer: `s3://datalakeagrosense/gold/`)
 
 ---
 
