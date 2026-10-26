@@ -11,8 +11,6 @@ from datetime import date
 from unittest.mock import MagicMock
 from uuid import uuid4
 
-import pyarrow.parquet as pq
-import pytest
 from agrosense_api.services.star_schema_gold import (
     ATHENA_GOLD_STAR_SCHEMA_DDL,
     StarSchemaGoldPipeline,
@@ -113,9 +111,14 @@ def test_gold_star_schema_etl_execution_and_s3_upload() -> None:
 
 def test_athena_gold_ddl_syntax_and_tables() -> None:
     """SCRUM-185: Verificación de DDL Athena para compatibilidad con Power BI."""
-    assert "CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.dim_finca" in ATHENA_GOLD_STAR_SCHEMA_DDL
-    assert "CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.dim_tiempo" in ATHENA_GOLD_STAR_SCHEMA_DDL
-    assert "CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.fact_entregas" in ATHENA_GOLD_STAR_SCHEMA_DDL
-    assert "CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.fact_alertas" in ATHENA_GOLD_STAR_SCHEMA_DDL
+    table_patterns = [
+        "CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.dim_finca",
+        "CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.dim_tiempo",
+        "CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.fact_entregas",
+        "CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.fact_alertas",
+    ]
+    for pattern in table_patterns:
+        assert pattern in ATHENA_GOLD_STAR_SCHEMA_DDL
+
     assert "s3://datalakeagrosense/gold/" in ATHENA_GOLD_STAR_SCHEMA_DDL
     assert "'parquet.compression'='SNAPPY'" in ATHENA_GOLD_STAR_SCHEMA_DDL

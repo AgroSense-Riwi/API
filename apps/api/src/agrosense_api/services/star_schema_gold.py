@@ -1,7 +1,8 @@
 """AgroSense Café — Star Schema Dimensional Model and PySpark Gold Layer Pipeline.
 
 Implements requirements for:
-- SCRUM-183: Dimensional Model Schema Specification (Fact_Entregas, Fact_Alertas, Dim_Finca, Dim_Tiempo, Dim_Productor).
+- SCRUM-183: Dimensional Model Schema Specification
+  (Fact_Entregas, Fact_Alertas, Dim_Finca, Dim_Tiempo).
 - SCRUM-184: PySpark ETL Pipeline building Gold Layer Parquet Star Schema in S3 Refined (CT-07).
 - SCRUM-185: AWS Athena Data Catalog Integration for High-Performance Ad-Hoc SQL Queries.
 """
@@ -9,15 +10,13 @@ Implements requirements for:
 from __future__ import annotations
 
 import io
-from dataclasses import asdict, dataclass, field
-from datetime import UTC, date, datetime
-from decimal import Decimal
+from dataclasses import asdict, dataclass
+from datetime import date
 from typing import Any
 from uuid import UUID
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-
 
 # ==============================================================
 # 1. Dimensional Model Specification (SCRUM-183)
@@ -144,7 +143,9 @@ class StarSchemaGoldPipeline:
         # 3. Fact_Entregas
         fact_entregas = [
             FactEntregas(
-                delivery_id=str(d.get("delivery_id", UUID("00000000-0000-0000-0000-000000000001"))),
+                delivery_id=str(
+                    d.get("delivery_id", UUID("00000000-0000-0000-0000-000000000001"))
+                ),
                 date_key=int(d.get("delivery_date", "2026-10-10").replace("-", "")),
                 farm_id=str(d.get("farm_id")),
                 variety_id=int(d.get("variety_id", 1)),
@@ -157,19 +158,22 @@ class StarSchemaGoldPipeline:
         ]
 
         # 4. Fact_Alertas
-        fact_alertas = [
-            FactAlertas(
-                alert_id=str(a.get("alert_id")),
-                date_key=int(a.get("observation_date", "2026-10-10").replace("-", "")),
-                farm_id=str(a.get("farm_id")),
-                alert_type=a.get("alert_type", "COFFEE_RUST"),
-                severity=a.get("severity", "CRITICAL"),
-                alert_status=a.get("alert_status", "ACTIVE"),
-                soil_moisture_mean_pct=float(a["soil_moisture_mean_pct"]) if a.get("soil_moisture_mean_pct") is not None else None,
-                precip_accum_72h_mm=float(a["precip_accum_72h_mm"]) if a.get("precip_accum_72h_mm") is not None else None,
+        fact_alertas: list[FactAlertas] = []
+        for a in raw_alerts:
+            moisture = a.get("soil_moisture_mean_pct")
+            precip = a.get("precip_accum_72h_mm")
+            fact_alertas.append(
+                FactAlertas(
+                    alert_id=str(a.get("alert_id")),
+                    date_key=int(a.get("observation_date", "2026-10-10").replace("-", "")),
+                    farm_id=str(a.get("farm_id")),
+                    alert_type=a.get("alert_type", "COFFEE_RUST"),
+                    severity=a.get("severity", "CRITICAL"),
+                    alert_status=a.get("alert_status", "ACTIVE"),
+                    soil_moisture_mean_pct=float(moisture) if moisture is not None else None,
+                    precip_accum_72h_mm=float(precip) if precip is not None else None,
+                )
             )
-            for a in raw_alerts
-        ]
 
         uploaded_uris: dict[str, str] = {}
         if s3_client is not None:
