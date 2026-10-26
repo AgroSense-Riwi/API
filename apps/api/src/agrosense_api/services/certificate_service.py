@@ -98,8 +98,10 @@ class DigitalTraceabilityCertificate:
             "issuer": self.issuer,
             "buyer_id": str(self.buyer_id) if self.buyer_id else None,
             "buyer_name": self.buyer_name,
-            "total_weight_kg": str(self.total_weight_kg),
-            "cupping_score": str(self.cupping_score) if self.cupping_score is not None else None,
+            "total_weight_kg": float(self.total_weight_kg),
+            "cupping_score": (
+                float(self.cupping_score) if self.cupping_score is not None else None
+            ),
             "water_footprint": self.water_footprint,
             "farms": self.farms,
         }
@@ -144,7 +146,8 @@ class CertificateBuilder:
         issuer: str = "AgroSense Café Certification Authority",
     ) -> DigitalTraceabilityCertificate:
         now_iso = datetime.now(UTC).isoformat().replace("+00:00", "Z")
-        cert_id = f"CERT-{batch_code}-{hashlib.md5(str(batch_id).encode()).hexdigest()[:8].upper()}"  # noqa: S324
+        batch_hash = hashlib.md5(str(batch_id).encode()).hexdigest()[:8].upper()  # noqa: S324
+        cert_id = f"CERT-{batch_code}-{batch_hash}"
 
         farms_payload = [
             {
@@ -202,13 +205,23 @@ class PublicCertificateValidator:
         # Reconstruir objeto sin hash para verificar integridad
         water_dict = certificate_payload.get("water_footprint", {})
         buyer_id_raw = certificate_payload.get("buyer_id")
-        buyer_uuid = UUID(buyer_id_raw) if buyer_id_raw else None
+        buyer_uuid = (
+            buyer_id_raw
+            if isinstance(buyer_id_raw, UUID)
+            else (UUID(str(buyer_id_raw)) if buyer_id_raw else None)
+        )
+        batch_id_raw = certificate_payload.get("batch_id")
+        batch_uuid = (
+            batch_id_raw
+            if isinstance(batch_id_raw, UUID)
+            else (UUID(str(batch_id_raw)) if batch_id_raw else UUID(int=0))
+        )
         cupping_raw = certificate_payload.get("cupping_score")
         cupping_val = Decimal(str(cupping_raw)) if cupping_raw is not None else None
 
         reconstructed = DigitalTraceabilityCertificate(
             certificate_id=certificate_payload.get("certificate_id", ""),
-            batch_id=UUID(certificate_payload.get("batch_id")),
+            batch_id=batch_uuid,
             batch_code=certificate_payload.get("batch_code", ""),
             issued_at=certificate_payload.get("issued_at", ""),
             issuer=certificate_payload.get("issuer", ""),
