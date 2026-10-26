@@ -171,7 +171,7 @@ def test_issue_token_wrong_password(client: TestClient) -> None:
         },
     )
     assert response.status_code == 401
-    assert response.json()["detail"] == "Incorrect username or password"
+    assert response.json()["error"]["message"] == "Incorrect username or password"
 
 
 def test_issue_token_wrong_username(client: TestClient) -> None:
@@ -183,7 +183,7 @@ def test_issue_token_wrong_username(client: TestClient) -> None:
         },
     )
     assert response.status_code == 401
-    assert response.json()["detail"] == "Incorrect username or password"
+    assert response.json()["error"]["message"] == "Incorrect username or password"
 
 
 def test_issue_token_unconfigured_auth(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -198,7 +198,7 @@ def test_issue_token_unconfigured_auth(client: TestClient, monkeypatch: pytest.M
         },
     )
     assert response.status_code == 503
-    assert "Authentication is not configured" in response.json()["detail"]
+    assert "Authentication is not configured" in response.json()["error"]["message"]
 
 
 # ==========================================
