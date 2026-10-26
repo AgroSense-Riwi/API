@@ -12,8 +12,6 @@ Validates:
 """
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
-from unittest.mock import MagicMock
 from uuid import uuid4
 
 import jwt
@@ -66,7 +64,7 @@ def client() -> TestClient:
 
 
 def test_password_hashing_and_verification() -> None:
-    raw_password = "SecurePassword2026!"
+    raw_password = "SecurePassword2026!"  # noqa: S105
     hashed = hash_password(raw_password)
 
     assert hashed != raw_password
@@ -76,7 +74,7 @@ def test_password_hashing_and_verification() -> None:
     assert verify_password(raw_password, hashed) is True
 
     # Incorrect password fails
-    assert verify_password("WrongPassword!", hashed) is False
+    assert verify_password("WrongPassword!", hashed) is False  # noqa: S105
     assert verify_password("", hashed) is False
 
 
@@ -151,7 +149,7 @@ def test_issue_token_success(client: TestClient) -> None:
         "/api/v1/auth/token",
         data={
             "username": "admin@agrosense.com",
-            "password": "SuperSecret123!",
+            "password": "SuperSecret123!",  # noqa: S106
         },
     )
     assert response.status_code == 200
@@ -169,7 +167,7 @@ def test_issue_token_wrong_password(client: TestClient) -> None:
         "/api/v1/auth/token",
         data={
             "username": "admin@agrosense.com",
-            "password": "InvalidPassword!",
+            "password": "InvalidPassword!",  # noqa: S106
         },
     )
     assert response.status_code == 401
@@ -181,7 +179,7 @@ def test_issue_token_wrong_username(client: TestClient) -> None:
         "/api/v1/auth/token",
         data={
             "username": "unknown@agrosense.com",
-            "password": "SuperSecret123!",
+            "password": "SuperSecret123!",  # noqa: S106
         },
     )
     assert response.status_code == 401
@@ -196,7 +194,7 @@ def test_issue_token_unconfigured_auth(client: TestClient, monkeypatch: pytest.M
         "/api/v1/auth/token",
         data={
             "username": "admin@agrosense.com",
-            "password": "SuperSecret123!",
+            "password": "SuperSecret123!",  # noqa: S106
         },
     )
     assert response.status_code == 503
@@ -234,9 +232,10 @@ async def test_get_current_user_insufficient_permissions() -> None:
 @pytest.mark.anyio
 async def test_get_current_user_invalid_token() -> None:
     security_scopes = SecurityScopes(scopes=[])
+    dummy_token = "invalid.bearer.token"  # noqa: S105
 
     with pytest.raises(HTTPException) as exc_info:
-        await get_current_user(token="invalid.bearer.token", security_scopes=security_scopes)
+        await get_current_user(token=dummy_token, security_scopes=security_scopes)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid or expired access token"
