@@ -27,7 +27,7 @@ def test_dim_tiempo_generation_structure() -> None:
     assert first.year == 2026
     assert first.month == 1
     assert first.quarter == 1
-    assert first.is_weekend is False
+    assert not first.is_weekend
 
 
 def test_star_schema_parquet_serialization_with_snappy() -> None:
