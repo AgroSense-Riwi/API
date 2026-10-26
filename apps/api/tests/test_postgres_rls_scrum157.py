@@ -1,10 +1,10 @@
 """Tests unitarios y de migracion para SCRUM-157:
-Implementacion de politicas PostgreSQL Row-Level Security (RLS) para aislamiento multi-tenant de compradores.
+Implementacion de politicas PostgreSQL RLS para aislamiento multi-tenant.
 
 Valida:
-1. Definicion de migracion Alembic para RLS (upgrade y downgrade validos con SQL estricto).
-2. Activacion de RLS en las tablas criticas de trazabilidad: `buyer_batch_contracts` y `export_batches`.
-3. Existencia y sintaxis de las politicas de aislamiento por variable de sesion `app.current_buyer_id`.
+1. Definicion de migracion Alembic para RLS (upgrade/downgrade con SQL estricto).
+2. Activacion de RLS en: `buyer_batch_contracts` y `export_batches`.
+3. Existencia y sintaxis de politicas con variable de sesion `app.current_buyer_id`.
 4. Comportamiento en base de datos PostgreSQL cuando este disponible.
 """
 
@@ -47,7 +47,6 @@ def test_rls_migration_file_exists_and_contains_expected_policies() -> None:
 def test_rls_isolation_logic_with_session_variable(db_session: Session) -> None:
     """Valida la evaluacion logica de aislamiento de compras cuando se ejecuta sobre PostgreSQL."""
     buyer_a = uuid4()
-    buyer_b = uuid4()
 
     # Si estamos en SQLite o PostgreSQL sin extensiones, el fixture hace skip
     try:
@@ -56,7 +55,9 @@ def test_rls_isolation_logic_with_session_variable(db_session: Session) -> None:
         db_session.execute(text("ALTER TABLE export_batches ENABLE ROW LEVEL SECURITY;"))
 
         # Recrear politicas en la sesion de prueba
-        db_session.execute(text("DROP POLICY IF EXISTS test_rls_contracts ON buyer_batch_contracts;"))
+        db_session.execute(
+            text("DROP POLICY IF EXISTS test_rls_contracts ON buyer_batch_contracts;")
+        )
         db_session.execute(
             text(
                 """
@@ -73,14 +74,14 @@ def test_rls_isolation_logic_with_session_variable(db_session: Session) -> None:
 
         # Setear comprador A
         db_session.execute(text(f"SET LOCAL app.current_buyer_id = '{buyer_a}';"))
-        res = db_session.execute(text("SELECT current_setting('app.current_buyer_id', true);")).scalar()
+        stmt_a = text("SELECT current_setting('app.current_buyer_id', true);")
+        res = db_session.execute(stmt_a).scalar()
         assert res == str(buyer_a)
 
         # Limpiar variable
         db_session.execute(text("SET LOCAL app.current_buyer_id = '';"))
-        res_empty = db_session.execute(
-            text("SELECT current_setting('app.current_buyer_id', true);")
-        ).scalar()
+        stmt_empty = text("SELECT current_setting('app.current_buyer_id', true);")
+        res_empty = db_session.execute(stmt_empty).scalar()
         assert res_empty == ""
 
     except Exception as exc:
