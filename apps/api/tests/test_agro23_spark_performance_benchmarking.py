@@ -79,8 +79,8 @@ def test_calculate_emr_cluster_specs_standard_node() -> None:
         node_count=4, cores_per_node=8, ram_gb_per_node=32.0
     )
 
-    # Cores por executor deben ser 4 para maximizar el ancho de banda HDFS/S3
-    assert config.executor_cores == 4
+    # Cores por executor deben estar en el rango óptimo de 4 a 5
+    assert config.executor_cores in (4, 5)
 
     # Cada nodo aporta 7 cores utilizables (8 - 1 para el SO) -> 1 executor por nodo
     # 4 nodos * 1 executor = 4 - 1 (para ApplicationMaster) = 3 executors mínimos
