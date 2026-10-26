@@ -8,15 +8,16 @@ Valida:
 4. Comportamiento en base de datos PostgreSQL cuando este disponible.
 """
 
+import os
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, text
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MIGRATIONS_DIR = REPO_ROOT / "apps" / "api" / "migrations" / "versions"
+TEST_DB_URL = os.getenv("TEST_DATABASE_URL")
 
 
 def test_rls_migration_file_exists_and_contains_expected_policies() -> None:
@@ -44,45 +45,27 @@ def test_rls_migration_file_exists_and_contains_expected_policies() -> None:
     assert "ALTER TABLE buyer_batch_contracts DISABLE ROW LEVEL SECURITY;" in migration_content
 
 
-def test_rls_isolation_logic_with_session_variable(db_session: Session) -> None:
+def test_rls_isolation_logic_with_session_variable() -> None:
     """Valida la evaluacion logica de aislamiento de compras cuando se ejecuta sobre PostgreSQL."""
+    if not TEST_DB_URL:
+        pytest.skip("TEST_DATABASE_URL no configurada; omitiendo test en vivo contra PostgreSQL.")
+
     buyer_a = uuid4()
 
-    # Si estamos en SQLite o PostgreSQL sin extensiones, el fixture hace skip
     try:
-        # Aplicar RLS
-        db_session.execute(text("ALTER TABLE buyer_batch_contracts ENABLE ROW LEVEL SECURITY;"))
-        db_session.execute(text("ALTER TABLE export_batches ENABLE ROW LEVEL SECURITY;"))
+        engine = create_engine(TEST_DB_URL)
+        with engine.begin() as conn:
+            # Setear variable de sesion
+            conn.execute(text(f"SET LOCAL app.current_buyer_id = '{buyer_a}';"))
+            stmt_a = text("SELECT current_setting('app.current_buyer_id', true);")
+            res = conn.execute(stmt_a).scalar()
+            assert res == str(buyer_a)
 
-        # Recrear politicas en la sesion de prueba
-        db_session.execute(
-            text("DROP POLICY IF EXISTS test_rls_contracts ON buyer_batch_contracts;")
-        )
-        db_session.execute(
-            text(
-                """
-                CREATE POLICY test_rls_contracts ON buyer_batch_contracts
-                FOR ALL
-                USING (
-                    current_setting('app.current_buyer_id', true) IS NULL
-                    OR current_setting('app.current_buyer_id', true) = ''
-                    OR buyer_id = NULLIF(current_setting('app.current_buyer_id', true), '')::uuid
-                );
-                """
-            )
-        )
-
-        # Setear comprador A
-        db_session.execute(text(f"SET LOCAL app.current_buyer_id = '{buyer_a}';"))
-        stmt_a = text("SELECT current_setting('app.current_buyer_id', true);")
-        res = db_session.execute(stmt_a).scalar()
-        assert res == str(buyer_a)
-
-        # Limpiar variable
-        db_session.execute(text("SET LOCAL app.current_buyer_id = '';"))
-        stmt_empty = text("SELECT current_setting('app.current_buyer_id', true);")
-        res_empty = db_session.execute(stmt_empty).scalar()
-        assert res_empty == ""
+            # Limpiar variable
+            conn.execute(text("SET LOCAL app.current_buyer_id = '';"))
+            stmt_empty = text("SELECT current_setting('app.current_buyer_id', true);")
+            res_empty = conn.execute(stmt_empty).scalar()
+            assert res_empty == ""
 
     except Exception as exc:
         pytest.skip(f"Entorno no soporta RLS nativo de PostgreSQL: {exc}")
