@@ -21,7 +21,7 @@ def upgrade() -> None:
     op.execute("ALTER TABLE export_batches ENABLE ROW LEVEL SECURITY;")
 
     # 2. Politica RLS para buyer_batch_contracts:
-    # Si app.current_buyer_id esta seteado, solo expone los contratos que pertenecen a ese comprador.
+    # Si app.current_buyer_id esta seteado, solo expone contratos de ese comprador.
     # Si no esta seteado o esta vacio, no filtra (permite acceso a procesos internos / admin).
     op.execute(
         """
@@ -36,7 +36,7 @@ def upgrade() -> None:
     )
 
     # 3. Politica RLS para export_batches:
-    # Si app.current_buyer_id esta seteado, solo expone los lotes asociados en buyer_batch_contracts.
+    # Si app.current_buyer_id esta seteado, solo expone lotes asociados en buyer_batch_contracts.
     # Si no esta seteado o esta vacio, no filtra.
     op.execute(
         """
