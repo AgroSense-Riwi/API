@@ -220,7 +220,7 @@ def test_check_constraints_and_foreign_key_rules(db_session: Session):
         db_session.flush()
     db_session.rollback()
 
-    # 2. Violación de ON DELETE RESTRICT al intentar borrar un comprador con contrato activo (RN-11)
+    # 2. Violación de ON DELETE RESTRICT al borrar un comprador con contrato activo (RN-11)
     valid_batch = ExportBatch(
         batch_code="EXP-VALID-002",
         total_weight_kg=Decimal("500.00"),

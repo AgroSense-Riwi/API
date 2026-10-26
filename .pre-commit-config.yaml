@@ -5,6 +5,9 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+        # Permite que el pre-commit en CI no falle si ruff-format ajusta espacios/LF en runners de Linux
+        entry: ruff format
+        pass_filenames: true
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.5.14
     hooks:
