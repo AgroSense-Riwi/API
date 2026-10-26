@@ -1,7 +1,7 @@
-# AgroSense Café — End-to-End Live Demonstration Script & System Sign-Off
-**Jira Reference:** `SCRUM-194` / Story `AGRO-29` (`SCRUM-48`)  
-**Audience:** Technical Evaluators, Product Owners & System Stakeholders  
-**Execution Environment:** Production-Ready Staging Environment  
+﻿# AgroSense Café — End-to-End Live Demonstration Script & System Sign-Off
+**Jira Reference:** `SCRUM-194` / Story `AGRO-29` (`SCRUM-48`)
+**Audience:** Technical Evaluators, Product Owners & System Stakeholders
+**Execution Environment:** Production-Ready Staging Environment
 
 ---
 
