@@ -93,6 +93,12 @@ class Farm(BaseModel):
         default=False,
         server_default=text("false"),
     )
+    # Perímetro de la finca (EPSG:4326). Nullable por compatibilidad con el seed; una finca
+    # sin geometría NO se considera conforme con RN-09 en la certificación.
+    geom: Mapped[WKBElement | None] = mapped_column(
+        Geometry(geometry_type="POLYGON", srid=4326),
+        nullable=True,
+    )
 
     # Relaciones
     producer: Mapped[Producer] = relationship(
@@ -126,6 +132,35 @@ class Farm(BaseModel):
 
     def __repr__(self) -> str:
         return f"<Farm(farm_id={self.farm_id}, farm_code='{self.farm_code}')>"
+
+
+class ForestReserve(BaseModel):
+    """Reserva forestal protegida (RN-09) con su polígono en EPSG:4326."""
+
+    __tablename__ = "forest_reserves"
+
+    reserve_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    municipality_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("municipalities.municipality_id", name="fk_forest_reserves_municipality_id"),
+        nullable=True,
+    )
+    name: Mapped[str] = mapped_column(
+        String(150),
+        nullable=False,
+    )
+    geom: Mapped[WKBElement] = mapped_column(
+        Geometry(geometry_type="POLYGON", srid=4326),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<ForestReserve(reserve_id={self.reserve_id}, name='{self.name}')>"
 
 
 class FarmReserveOverlap(BaseModel):
