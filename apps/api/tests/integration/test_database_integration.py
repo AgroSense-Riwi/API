@@ -34,6 +34,27 @@ TEST_DATABASE_URL = os.getenv(
 )
 
 
+_DROP_PUBLIC_POLICIES_SQL = """
+DO $$
+DECLARE r record;
+BEGIN
+    FOR r IN SELECT policyname, tablename FROM pg_policies WHERE schemaname = 'public' LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', r.policyname, r.tablename);
+    END LOOP;
+END
+$$;
+"""
+
+
+def _drop_schema_objects(engine) -> None:
+    """Elimina políticas RLS (dependen de otras tablas) antes de borrar el modelo."""
+    with engine.begin() as conn:
+        conn.execute(text(_DROP_PUBLIC_POLICIES_SQL))
+    Base.metadata.drop_all(bind=engine)
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS alembic_version;"))
+
+
 @pytest.fixture(scope="module")
 def db_engine():
     """Inicializa el motor PostgreSQL/PostGIS y crea las 13 tablas del modelo."""
@@ -45,12 +66,12 @@ def db_engine():
     except Exception as exc:
         pytest.skip(f"Base de datos PostgreSQL/PostGIS no disponible: {exc}")
 
-    Base.metadata.drop_all(bind=engine)
+    _drop_schema_objects(engine)
     Base.metadata.create_all(bind=engine)
 
     yield engine
 
-    Base.metadata.drop_all(bind=engine)
+    _drop_schema_objects(engine)
     engine.dispose()
 
 
@@ -261,9 +282,7 @@ def test_alembic_migration_upgrade_and_downgrade_reproducibility(db_engine):
     alembic_cfg.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
 
     # 1. Limpiar cualquier tabla existente para probar desde una BD limpia
-    Base.metadata.drop_all(bind=db_engine)
-    with db_engine.begin() as conn:
-        conn.execute(text("DROP TABLE IF EXISTS alembic_version;"))
+    _drop_schema_objects(db_engine)
 
     # 2. Ejecutar upgrade a head para verificar construcción limpia con Alembic
     command.upgrade(alembic_cfg, "head")
