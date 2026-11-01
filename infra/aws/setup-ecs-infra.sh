@@ -32,6 +32,10 @@ PUBLIC_SUBNET_1_CIDR="10.0.1.0/24"
 PUBLIC_SUBNET_2_CIDR="10.0.2.0/24"
 PRIVATE_SUBNET_1_CIDR="10.0.3.0/24"
 PRIVATE_SUBNET_2_CIDR="10.0.4.0/24"
+# Liveness del ALB/ECS: /health/live no depende de BD ni broker, así una caída transitoria
+# de una dependencia no hace que ECS recicle todas las tareas. /health (readiness con 503)
+# queda para monitoreo y para Docker Compose (healthcheck_strategy.md).
+API_HEALTH_CHECK_PATH="/health/live"
 
 echo "=============================================="
 echo " AgroSense ECS Fargate — Infrastructure Setup"
@@ -294,13 +298,19 @@ TG_ARN=$(aws elbv2 create-target-group \
     --protocol HTTP --port 8000 \
     --vpc-id "${VPC_ID}" \
     --target-type ip \
-    --health-check-path "/health" \
+    --health-check-path "${API_HEALTH_CHECK_PATH}" \
     --health-check-interval-seconds 30 \
     --healthy-threshold-count 2 \
     --unhealthy-threshold-count 3 \
     --region "${AWS_REGION}" --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null || \
     aws elbv2 describe-target-groups --names "${PROJECT_NAME}-api-tg" \
     --region "${AWS_REGION}" --query 'TargetGroups[0].TargetGroupArn' --output text)
+
+# El target group puede existir de una ejecución anterior con otra ruta: alinearla.
+aws elbv2 modify-target-group \
+    --target-group-arn "${TG_ARN}" \
+    --health-check-path "${API_HEALTH_CHECK_PATH}" \
+    --region "${AWS_REGION}" >/dev/null
 
 aws elbv2 create-listener \
     --load-balancer-arn "${ALB_ARN}" \
