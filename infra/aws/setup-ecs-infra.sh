@@ -396,6 +396,12 @@ declare -A SECRETS=(
     ["agrosense/prod/postgres-db"]="agrosense_db"
     ["agrosense/prod/rabbitmq-user"]="agrosense_mq"
     ["agrosense/prod/rabbitmq-password"]="CHANGE_ME_GENERATE_SECURE_PASSWORD"
+    # Airflow: secretos propios (no reutilizar jwt-secret ni la BD de la aplicación)
+    ["agrosense/prod/airflow-database-url"]="postgresql+psycopg2://USER:PASS@HOST:5432/airflow_db"
+    ["agrosense/prod/airflow-fernet-key"]="CHANGE_ME_GENERATE_WITH_Fernet.generate_key"
+    ["agrosense/prod/airflow-api-secret"]="CHANGE_ME_GENERATE_SECURE_KEY"
+    ["agrosense/prod/airflow-admin-user"]="admin"
+    ["agrosense/prod/airflow-admin-password"]="CHANGE_ME_GENERATE_SECURE_PASSWORD"
 )
 
 for secret_name in "${!SECRETS[@]}"; do

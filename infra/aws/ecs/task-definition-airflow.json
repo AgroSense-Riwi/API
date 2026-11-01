@@ -11,6 +11,14 @@
       "name": "airflow-standalone-scheduler",
       "image": "apache/airflow:3.3.2",
       "essential": true,
+      "entryPoint": [
+        "/usr/bin/dumb-init",
+        "--",
+        "/bin/bash",
+        "-c",
+        "export AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS=\"$(printenv AIRFLOW_ADMIN_USER):admin\" && python -c 'import json, os; path = os.environ[\"AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE\"]; fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600); os.write(fd, (json.dumps({os.environ[\"AIRFLOW_ADMIN_USER\"]: os.environ[\"AIRFLOW_ADMIN_PASSWORD\"]}) + \"\\n\").encode()); os.close(fd)' && exec /entrypoint \"$@\"",
+        "--"
+      ],
       "command": ["standalone"],
       "portMappings": [
         {
@@ -22,21 +30,41 @@
         { "name": "AIRFLOW__CORE__EXECUTOR", "value": "LocalExecutor" },
         { "name": "AIRFLOW__CORE__LOAD_EXAMPLES", "value": "false" },
         { "name": "AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION", "value": "false" },
-        { "name": "AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS", "value": "true" },
+        { "name": "AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS", "value": "false" },
+        {
+          "name": "AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE",
+          "value": "/tmp/simple_auth_manager_passwords.json"
+        },
         { "name": "AWS_DEFAULT_REGION", "value": "${AWS_REGION}" }
       ],
       "secrets": [
         {
           "name": "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/database-url-sync-iLOr6K"
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/airflow-database-url"
         },
         {
           "name": "AIRFLOW__CORE__FERNET_KEY",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/jwt-secret-AJUt1i"
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/airflow-fernet-key"
         },
         {
           "name": "AIRFLOW__WEBSERVER__SECRET_KEY",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/jwt-secret-AJUt1i"
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/airflow-api-secret"
+        },
+        {
+          "name": "AIRFLOW__API__SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/airflow-api-secret"
+        },
+        {
+          "name": "AIRFLOW__API_AUTH__JWT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/airflow-api-secret"
+        },
+        {
+          "name": "AIRFLOW_ADMIN_USER",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/airflow-admin-user"
+        },
+        {
+          "name": "AIRFLOW_ADMIN_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/airflow-admin-password"
         },
         {
           "name": "S3_BUCKET_BRONZE",
