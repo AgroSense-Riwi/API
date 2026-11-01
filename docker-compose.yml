@@ -51,8 +51,10 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?RABBITMQ_DEFAULT_USER is required}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
-      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_DEFAULT_VHOST:-/}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_DEFAULT_VHOST:-/agrosense}
     volumes:
+      - ./infra/docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./infra/docker/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
       - iot_telemetry_queue_data:/var/lib/rabbitmq
     networks:
       - private_subnet
@@ -99,6 +101,25 @@ services:
       retries: 3
       start_period: 10s
 
+  # FastConsumer de telemetría (rabbitmq.md): consume telemetry.raw.queue con ACK manual.
+  # Misma imagen que la API; en AWS corre como segundo contenedor de la tarea Fargate de la API.
+  telemetry-consumer:
+    image: agrosense-api:local
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: agrosense_telemetry_consumer
+    restart: unless-stopped
+    command: ["python", "-m", "agrosense_api.workers.telemetry_consumer"]
+    environment:
+      AGROSENSE_RABBITMQ_URL: ${AGROSENSE_RABBITMQ_URL:?AGROSENSE_RABBITMQ_URL is required}
+      SKIP_MIGRATIONS: "true"
+    depends_on:
+      broker:
+        condition: service_healthy
+    networks:
+      - private_subnet
+
   simulators:
     image: agrosense-simulators:local
     build:
@@ -107,7 +128,7 @@ services:
     container_name: agrosense_simulators
     restart: unless-stopped
     environment:
-      RABBITMQ_URL: ${AGROSENSE_RABBITMQ_URL:-amqp://agrosense_mq:changeme@broker:5672/}
+      RABBITMQ_URL: ${AGROSENSE_RABBITMQ_URL:?AGROSENSE_RABBITMQ_URL is required}
       SIMULATOR_MODE: ${SIMULATOR_MODE:-dev}
       SIMULATOR_FARMS_COUNT: ${SIMULATOR_FARMS_COUNT:-300}
       SEED_VALUE: ${SEED_VALUE:-42}

@@ -64,6 +64,36 @@
           "awslogs-create-group": "true"
         }
       }
+    },
+    {
+      "name": "agrosense-telemetry-consumer",
+      "image": "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/agrosense-api:latest",
+      "essential": false,
+      "command": ["python", "-m", "agrosense_api.workers.telemetry_consumer"],
+      "dependsOn": [
+        {
+          "containerName": "agrosense-api",
+          "condition": "START"
+        }
+      ],
+      "environment": [
+        { "name": "SKIP_MIGRATIONS", "value": "true" }
+      ],
+      "secrets": [
+        {
+          "name": "AGROSENSE_RABBITMQ_URL",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/rabbitmq-url-skA1ZA"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/agrosense-api",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "telemetry-consumer",
+          "awslogs-create-group": "true"
+        }
+      }
     }
   ]
 }
