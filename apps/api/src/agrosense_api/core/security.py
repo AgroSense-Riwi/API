@@ -5,7 +5,17 @@ import jwt
 
 from agrosense_api.core.config import get_settings
 
+# Roles internos definidos en data_structure.md (tabla users).
+ROLE_AGRONOMIST = "AGRONOMIST"
+ROLE_QUALITY_CHIEF = "QUALITY_CHIEF"
+ROLE_SUSTAINABILITY_COMMITTEE = "SUSTAINABILITY_COMMITTEE"
+ROLE_ADMIN = "ADMIN"
+OPERATOR_ROLES: frozenset[str] = frozenset(
+    {ROLE_AGRONOMIST, ROLE_QUALITY_CHIEF, ROLE_SUSTAINABILITY_COMMITTEE, ROLE_ADMIN}
+)
+
 _password_context: Any = None
+_dummy_hash: str | None = None
 
 
 def _get_password_context() -> Any:
@@ -27,14 +37,35 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return _get_password_context().verify(password, password_hash)
+    """Verifica un secreto contra su hash Argon2. Un hash malformado nunca autentica."""
+    try:
+        return bool(_get_password_context().verify(password, password_hash))
+    except (ValueError, TypeError):
+        return False
+
+
+def verify_password_or_dummy(password: str, password_hash: str | None) -> bool:
+    """Verifica el secreto; si no hay hash, ejecuta igualmente una verificación ficticia.
+
+    Mantiene un tiempo de respuesta similar exista o no la identidad, para no filtrar
+    qué usuarios / client_id existen por diferencias de tiempo.
+    """
+    global _dummy_hash
+    if password_hash:
+        return verify_password(password, password_hash)
+    if _dummy_hash is None:
+        _dummy_hash = hash_password("agrosense-timing-equalizer")
+    verify_password(password, _dummy_hash)
+    return False
 
 
 def create_access_token(
     subject: str,
-    role: str = "ADMIN",
+    role: str,
     scopes: list[str] | None = None,
 ) -> str:
+    if role not in OPERATOR_ROLES:
+        raise ValueError(f"Unknown operator role '{role}'")
     settings = get_settings()
     secret = settings.jwt_secret_key.get_secret_value()
     if not secret:

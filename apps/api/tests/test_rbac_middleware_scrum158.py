@@ -9,8 +9,10 @@ Valida:
 5. Integracion de RBAC en endpoints de FastAPI.
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from agrosense_api.api.v1.dependencies import get_current_user, require_roles
+from agrosense_api.api.v1.dependencies import require_roles
 from agrosense_api.core.config import get_settings
 from agrosense_api.core.security import create_access_token, hash_password
 from agrosense_api.schemas.auth import AuthenticatedUser
@@ -105,12 +107,56 @@ def test_rbac_endpoint_access_forbidden(client: TestClient) -> None:
     ) -> dict[str, str]:
         return {"status": "ok", "role": user.role}
 
-    # Usuario con rol OPERATOR intenta acceder a ruta de QUALITY_CHIEF
-    token = create_access_token(subject="admin@agrosense.com", role="OPERATOR")
+    # Usuario con rol AGRONOMIST intenta acceder a ruta de QUALITY_CHIEF
+    token = create_access_token(subject="ana@agrosense.com", role="AGRONOMIST")
     response = client.get(
         "/api/v1/test-rbac-quality",
         headers={"Authorization": f"Bearer {token}"},
     )
 
     assert response.status_code == 403
-    assert "Operation not permitted for role 'OPERATOR'" in response.json()["error"]["message"]
+    assert "Operation not permitted for role 'AGRONOMIST'" in response.json()["error"]["message"]
+
+
+# ==========================================
+# 3. RBAC aplicado a endpoints reales
+# ==========================================
+
+_TELEMETRY_PAYLOAD = {
+    "farm_id": "6f1c2b8e-1d2a-4c55-9a7e-0c6a1a2b3c4d",
+    "sensor_id": "sensor-01",
+    "metric": "soil_moisture",
+    "value": 41.5,
+    "unit": "%",
+}
+
+
+@pytest.mark.parametrize("role", ["QUALITY_CHIEF", "SUSTAINABILITY_COMMITTEE"])
+def test_telemetry_write_forbidden_for_non_field_roles(client: TestClient, role: str) -> None:
+    token = create_access_token(subject="someone@agrosense.com", role=role)
+    response = client.post(
+        "/api/v1/telemetry",
+        json=_TELEMETRY_PAYLOAD,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize("role", ["AGRONOMIST", "ADMIN"])
+def test_telemetry_write_allowed_for_field_roles(client: TestClient, role: str) -> None:
+    token = create_access_token(subject="someone@agrosense.com", role=role)
+    with patch(
+        "agrosense_api.api.v1.endpoints.telemetry.publish_telemetry", new=AsyncMock()
+    ) as publish:
+        response = client.post(
+            "/api/v1/telemetry",
+            json=_TELEMETRY_PAYLOAD,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert response.status_code == 202
+    publish.assert_awaited_once()
+
+
+def test_telemetry_write_requires_token(client: TestClient) -> None:
+    response = client.post("/api/v1/telemetry", json=_TELEMETRY_PAYLOAD)
+    assert response.status_code == 401

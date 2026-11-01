@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from agrosense_api.core.config import get_settings
-from agrosense_api.core.security import create_buyer_access_token
+from agrosense_api.core.security import (
+    create_buyer_access_token,
+    decode_buyer_access_token,
+    hash_password,
+)
+from agrosense_api.models import InternationalBuyer
 from agrosense_api.schemas.traceability import (
     BatchSummaryResponse,
     TraceabilityResponse,
@@ -47,15 +52,62 @@ def buyer_token(buyer_id: uuid.UUID) -> str:
     return create_buyer_access_token(buyer_id)
 
 
-def test_issue_buyer_token(client: TestClient, buyer_id: uuid.UUID) -> None:
+BUYER_API_KEY = "not-a-real-key"  # noqa: S105
+
+
+def _buyer(buyer_id: uuid.UUID, *, is_active: bool = True, with_hash: bool = True):
+    return InternationalBuyer(
+        buyer_id=buyer_id,
+        client_id="BUYER-NORDIC-01",
+        buyer_name="Nordic Roasters",
+        api_key_hash=hash_password(BUYER_API_KEY) if with_hash else None,
+        is_active=is_active,
+    )
+
+
+def test_issue_buyer_token_with_valid_client_credentials(
+    client: TestClient, buyer_id: uuid.UUID, override_db
+) -> None:
+    override_db(_buyer(buyer_id))
     response = client.post(
         "/api/v1/auth/buyer-token",
-        json={"buyer_id": str(buyer_id)},
+        json={"client_id": "BUYER-NORDIC-01", "api_key": BUYER_API_KEY},
     )
     assert response.status_code == 200
     data = response.json()
-    assert "access_token" in data
     assert data["token_type"] == "bearer"  # noqa: S105
+    claims = decode_buyer_access_token(data["access_token"])
+    assert claims["buyer_id"] == str(buyer_id)
+
+
+@pytest.mark.parametrize(
+    ("buyer_factory", "api_key"),
+    [
+        (lambda bid: _buyer(bid), "wrong-key"),
+        (lambda bid: None, BUYER_API_KEY),
+        (lambda bid: _buyer(bid, is_active=False), BUYER_API_KEY),
+        (lambda bid: _buyer(bid, with_hash=False), BUYER_API_KEY),
+    ],
+    ids=["wrong-key", "unknown-client", "inactive-buyer", "no-key-provisioned"],
+)
+def test_issue_buyer_token_rejects_invalid_credentials(
+    client: TestClient, buyer_id: uuid.UUID, override_db, buyer_factory, api_key: str
+) -> None:
+    override_db(buyer_factory(buyer_id))
+    response = client.post(
+        "/api/v1/auth/buyer-token",
+        json={"client_id": "BUYER-NORDIC-01", "api_key": api_key},
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["message"] == "Invalid client credentials"
+
+
+def test_issue_buyer_token_no_longer_accepts_bare_buyer_id(
+    client: TestClient, buyer_id: uuid.UUID, override_db
+) -> None:
+    override_db(_buyer(buyer_id))
+    response = client.post("/api/v1/auth/buyer-token", json={"buyer_id": str(buyer_id)})
+    assert response.status_code == 422
 
 
 def test_traceability_requires_auth(client: TestClient) -> None:
@@ -149,3 +201,25 @@ def test_get_batch_trace_not_found(
         )
         assert response.status_code == 404
         assert "no encontrado" in response.json()["error"]["message"]
+
+
+def test_traceability_sets_rls_buyer_context(
+    client: TestClient, buyer_id: uuid.UUID, buyer_token: str
+) -> None:
+    """RN-11: cada request de comprador fija app.current_buyer_id (SET LOCAL) antes de consultar."""
+    with (
+        patch(
+            "agrosense_api.api.v1.dependencies.set_buyer_context", new=AsyncMock()
+        ) as set_context,
+        patch(
+            "agrosense_api.api.v1.endpoints.traceability.get_buyer_batches",
+            new=AsyncMock(return_value=[]),
+        ),
+    ):
+        response = client.get(
+            "/api/v1/traceability/batches",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+        )
+    assert response.status_code == 200
+    set_context.assert_awaited_once()
+    assert set_context.await_args.args[1] == buyer_id
