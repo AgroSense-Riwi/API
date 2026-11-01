@@ -29,7 +29,7 @@ class CloudWatchMetricThreshold:
     evaluation_periods: int
     period_seconds: int
     statistic: str = "Average"
-    sns_topic_arn: str = "arn:aws:sns:us-east-1:123456789012:agrosense-ops-alerts"
+    sns_topic_arn: str = "arn:aws:sns:us-east-2:123456789012:agrosense-ops-alerts"
 
 
 class CloudWatchObservabilityManager:

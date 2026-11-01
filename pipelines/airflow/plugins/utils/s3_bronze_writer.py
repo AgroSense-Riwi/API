@@ -58,7 +58,7 @@ class S3BronzeWriter:
             or os.getenv("S3_ENDPOINT_URL")
             or os.getenv("LOCALSTACK_URL")
         )
-        self.region_name = region_name or os.getenv("AWS_DEFAULT_REGION") or "us-east-1"
+        self.region_name = region_name or os.getenv("AWS_DEFAULT_REGION") or "us-east-2"
         self._s3_client = None
 
     @staticmethod
