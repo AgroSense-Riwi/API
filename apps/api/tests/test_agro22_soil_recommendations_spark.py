@@ -12,9 +12,11 @@ Verifies:
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from agrosense_api.services.soil_recommendations_spark import (
     CropNutrientBenchmark,
     NutrientEvaluation,
@@ -92,12 +94,45 @@ def test_scrum170_ca06_soil_unit_normalization_invariance() -> None:
     assert rec_mg.apply_fertilizer == rec_ppm.apply_fertilizer == rec_g.apply_fertilizer is True
 
 
-def test_scrum171_kaggle_crop_benchmark_loader() -> None:
-    """Verify SCRUM-171: Benchmark comparison against Kaggle coffee dataset."""
-    kaggle_path = Path(
-        r"C:\Users\Cohorte 5\Documents\Keiner\Agrosense\Agrosense\Datasets\Crop_recommendation.csv"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+# Dataset Kaggle "Crop Recommendation" (no versionado: *.csv está en .gitignore). Se busca en
+# AGROSENSE_CROP_RECOMMENDATION_CSV o en el repositorio hermano Datasets/ del workspace.
+DATASET_ENV_VAR = "AGROSENSE_CROP_RECOMMENDATION_CSV"
+DEFAULT_DATASET_CANDIDATES = (
+    REPO_ROOT.parent / "Datasets" / "Crop_recommendation.csv",
+    REPO_ROOT / "data" / "Crop_recommendation.csv",
+)
+
+
+@pytest.fixture
+def kaggle_crop_csv() -> Path:
+    configured = os.getenv(DATASET_ENV_VAR)
+    candidates = [Path(configured)] if configured else list(DEFAULT_DATASET_CANDIDATES)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    pytest.skip(
+        f"Dataset Crop_recommendation.csv no disponible; define {DATASET_ENV_VAR} "
+        "para ejecutar el benchmark SCRUM-171 contra los datos reales."
     )
-    benchmark = CropNutrientBenchmark.from_kaggle_csv(kaggle_path)
+
+
+@pytest.fixture
+def small_crop_csv(tmp_path: Path) -> Path:
+    csv_path = tmp_path / "Crop_recommendation.csv"
+    csv_path.write_text(
+        "N,P,K,temperature,humidity,ph,rainfall,label\n"
+        "90,20,30,25.0,60.0,6.10,150.0,coffee\n"
+        "110,35,28,24.0,62.0,6.90,160.0,coffee\n"
+        "40,60,20,20.0,80.0,5.00,200.0,rice\n",
+        encoding="utf-8",
+    )
+    return csv_path
+
+
+def test_scrum171_kaggle_crop_benchmark_loader(kaggle_crop_csv: Path) -> None:
+    """Verify SCRUM-171: Benchmark comparison against Kaggle coffee dataset."""
+    benchmark = CropNutrientBenchmark.from_kaggle_csv(kaggle_crop_csv)
 
     assert benchmark.crop_label == "coffee"
     assert benchmark.n_min_mg_kg == 80.0
@@ -106,6 +141,24 @@ def test_scrum171_kaggle_crop_benchmark_loader() -> None:
     assert benchmark.p_max_mg_kg == 40.0
     assert benchmark.k_min_mg_kg == 25.0
     assert benchmark.k_max_mg_kg == 35.0
+    # El pH sólo coincide con el dataset real (los valores por defecto son 6.0 / 7.5): prueba
+    # que el CSV se leyó en vez de caer silenciosamente al fallback.
+    assert benchmark.ph_min == 6.02
+    assert benchmark.ph_max == 7.49
+
+
+def test_scrum171_benchmark_is_computed_from_coffee_rows(small_crop_csv: Path) -> None:
+    benchmark = CropNutrientBenchmark.from_kaggle_csv(small_crop_csv)
+    assert (benchmark.n_min_mg_kg, benchmark.n_max_mg_kg) == (90.0, 110.0)
+    assert (benchmark.p_min_mg_kg, benchmark.p_max_mg_kg) == (20.0, 35.0)
+    assert (benchmark.k_min_mg_kg, benchmark.k_max_mg_kg) == (28.0, 30.0)
+    assert (benchmark.ph_min, benchmark.ph_max) == (6.1, 6.9)
+
+
+def test_scrum171_missing_dataset_falls_back_to_default_benchmark(tmp_path: Path) -> None:
+    assert CropNutrientBenchmark.from_kaggle_csv(tmp_path / "missing.csv") == (
+        CropNutrientBenchmark()
+    )
 
 
 def test_scrum172_excess_nutrient_warning_and_dosage_calculation() -> None:
@@ -155,15 +208,13 @@ def test_scrum172_excess_nutrient_warning_and_dosage_calculation() -> None:
     assert rec_excess.recommended_p_kg_ha == 0.0
 
 
-def test_soil_s3_parquet_and_postgres_export() -> None:
+def test_soil_s3_parquet_and_postgres_export(small_crop_csv: Path) -> None:
     """Verify Snappy Parquet generation and PostgreSQL persistence for soil pipeline."""
     mock_s3 = MagicMock()
     mock_glue = MagicMock()
     mock_session = AsyncMock()
 
-    kaggle_path = Path(
-        r"C:\Users\Cohorte 5\Documents\Keiner\Agrosense\Agrosense\Datasets\Crop_recommendation.csv"
-    )
+    kaggle_path = small_crop_csv
     raw_analyses = [
         {
             "farm_id": "FARM-S3-SOIL",
