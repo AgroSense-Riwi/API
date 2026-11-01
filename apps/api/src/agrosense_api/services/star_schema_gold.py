@@ -143,9 +143,7 @@ class StarSchemaGoldPipeline:
         # 3. Fact_Entregas
         fact_entregas = [
             FactEntregas(
-                delivery_id=str(
-                    d.get("delivery_id", UUID("00000000-0000-0000-0000-000000000001"))
-                ),
+                delivery_id=str(d.get("delivery_id", UUID("00000000-0000-0000-0000-000000000001"))),
                 date_key=int(d.get("delivery_date", "2026-10-10").replace("-", "")),
                 farm_id=str(d.get("farm_id")),
                 variety_id=int(d.get("variety_id", 1)),

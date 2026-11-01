@@ -9,7 +9,6 @@ Cubre:
 
 from pathlib import Path
 
-import pytest
 from agrosense_api.services.observability_service import (
     AlarmState,
     CloudWatchObservabilityManager,

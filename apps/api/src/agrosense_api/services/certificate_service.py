@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -190,9 +190,7 @@ class PublicCertificateValidator:
     """Validador público de autenticidad e integridad de certificados (SCRUM-168)."""
 
     @classmethod
-    def verify_certificate_integrity(
-        cls, certificate_payload: dict[str, Any]
-    ) -> dict[str, Any]:
+    def verify_certificate_integrity(cls, certificate_payload: dict[str, Any]) -> dict[str, Any]:
         """Comprueba si el certificado es auténtico o si ha sido manipulado."""
         stored_hash = certificate_payload.get("certificate_hash")
         if not stored_hash:
