@@ -51,6 +51,14 @@
           "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/buyer-jwt-secret-yT4Uk2"
         },
         {
+          "name": "AGROSENSE_AUTH_USERNAME",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/auth-username"
+        },
+        {
+          "name": "AGROSENSE_AUTH_PASSWORD_HASH",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/auth-password-hash"
+        },
+        {
           "name": "S3_BUCKET",
           "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/s3-bucket-LXXZkV"
         }

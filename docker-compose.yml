@@ -12,9 +12,10 @@ x-airflow-common: &airflow-common
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__WEBSERVER__SECRET_KEY:?AIRFLOW__WEBSERVER__SECRET_KEY is required}
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-changeme}
-    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-changeme}
-    AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+    # Sin valores de relleno: vacías => boto3 usa su cadena de credenciales por defecto.
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+    AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-2}
     S3_BUCKET: ${S3_BUCKET:-changeme}
   volumes:
     - ./pipelines/airflow/dags:/opt/airflow/dags:ro
@@ -81,10 +82,13 @@ services:
       AGROSENSE_JWT_SECRET_KEY: ${AGROSENSE_JWT_SECRET_KEY:?AGROSENSE_JWT_SECRET_KEY is required}
       AGROSENSE_BUYER_JWT_SECRET_KEY: ${AGROSENSE_BUYER_JWT_SECRET_KEY:?AGROSENSE_BUYER_JWT_SECRET_KEY is required}
       AGROSENSE_ALLOWED_ORIGINS: ${AGROSENSE_ALLOWED_ORIGINS:-["http://localhost:3000","http://localhost:8000"]}
+      # Usuario bootstrap opcional (ADMIN); el resto de operadores vive en la tabla users.
+      AGROSENSE_AUTH_USERNAME: ${AGROSENSE_AUTH_USERNAME:-}
+      AGROSENSE_AUTH_PASSWORD_HASH: ${AGROSENSE_AUTH_PASSWORD_HASH:-}
       SKIP_MIGRATIONS: ${SKIP_MIGRATIONS:-false}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-changeme}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-changeme}
-      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-2}
       S3_BUCKET: ${S3_BUCKET:-changeme}
     depends_on:
       db:
