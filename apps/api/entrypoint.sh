@@ -10,8 +10,9 @@ log_error() {
 }
 
 SKIP_MIGRATIONS="${SKIP_MIGRATIONS:-false}"
-DB_MAX_RETRIES="${DB_MAX_RETRIES:-30}"
-DB_RETRY_INTERVAL="${DB_RETRY_INTERVAL:-2}"
+# Exportadas para que el bloque Python de espera use los mismos valores que los logs de bash.
+export DB_MAX_RETRIES="${DB_MAX_RETRIES:-30}"
+export DB_RETRY_INTERVAL="${DB_RETRY_INTERVAL:-2}"
 
 if [[ "${SKIP_MIGRATIONS,,}" == "true" || "${SKIP_MIGRATIONS}" == "1" ]]; then
     log_info "SKIP_MIGRATIONS=${SKIP_MIGRATIONS} detected. Skipping Alembic database migrations."
