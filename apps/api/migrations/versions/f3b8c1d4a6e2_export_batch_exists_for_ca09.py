@@ -32,7 +32,7 @@ def upgrade() -> None:
         STABLE
         SECURITY DEFINER
         SET search_path = public, pg_temp
-        SET app.current_role = 'operator'
+        SET app."current_role" = 'operator'
         AS $$
             SELECT EXISTS (SELECT 1 FROM export_batches WHERE batch_code = p_batch_code);
         $$;
