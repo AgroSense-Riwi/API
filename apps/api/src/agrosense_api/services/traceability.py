@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -52,6 +52,11 @@ async def get_batch_trace(
     )
     batch = await session.scalar(stmt)
     if batch is None:
+        # Bajo RLS (rol agrosense_app) el lote de otro comprador es invisible. Se distingue
+        # "existe pero no es tuyo" (403, CA-09) de "no existe" (404) con una función
+        # SECURITY DEFINER que solo devuelve un booleano (migración f3b8c1d4a6e2).
+        if await session.scalar(select(func.export_batch_exists(batch_code))):
+            raise TraceabilityForbiddenError("Este lote no está asignado a este comprador")
         raise TraceabilityNotFoundError("Lote de exportación no encontrado")
 
     # Validar que el comprador tenga contrato con este lote
