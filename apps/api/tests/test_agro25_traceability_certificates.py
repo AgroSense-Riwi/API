@@ -13,7 +13,6 @@ from uuid import uuid4
 import pytest
 from agrosense_api.services.certificate_service import (
     CertificateBuilder,
-    DigitalTraceabilityCertificate,
     FarmGeoTraceabilityPayload,
     PublicCertificateValidator,
     WaterFootprintMetrics,

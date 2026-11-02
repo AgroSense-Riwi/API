@@ -28,8 +28,10 @@ class Settings(BaseSettings):
     auth_scopes: list[str] = Field(
         default_factory=lambda: ["lots:read", "farms:read", "lots:certify"]
     )
+    # vhost /agrosense (rabbitmq.md), p. ej. amqp://user:pass@broker:5672/%2Fagrosense
     rabbitmq_url: SecretStr | None = None
-    telemetry_queue: str = "agrosense.telemetry"
+    # Mensajes sin ACK que el FastConsumer retiene a la vez (ACK manual, RNF-01).
+    telemetry_consumer_prefetch: int = Field(default=50, ge=1, le=1000)
     allowed_origins: list[str] = Field(default_factory=list)
 
     @field_validator("jwt_secret_key", "buyer_jwt_secret_key")

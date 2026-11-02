@@ -4,7 +4,7 @@ import uuid
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, Text, text
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,6 +32,23 @@ class User(BaseModel):
     role: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
+    )
+    # Credenciales de login (CT-02). Nullable para compatibilidad con el seed: un usuario
+    # sin email/password_hash no puede autenticarse en /auth/token.
+    email: Mapped[str | None] = mapped_column(
+        String(150),
+        unique=True,
+        nullable=True,
+    )
+    password_hash: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
     )
 
     # Relaciones

@@ -4,8 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agrosense_api.api.v1.dependencies import get_current_buyer_id
-from agrosense_api.db.session import get_db
+from agrosense_api.api.v1.dependencies import get_buyer_db, get_current_buyer_id
 from agrosense_api.schemas.traceability import BatchSummaryResponse, TraceabilityResponse
 from agrosense_api.services.traceability import (
     TraceabilityForbiddenError,
@@ -26,9 +25,10 @@ router = APIRouter(prefix="/traceability", tags=["Compradores"])
     ),
 )
 async def list_buyer_batches(
-    session: Annotated[AsyncSession, Depends(get_db)],
+    session: Annotated[AsyncSession, Depends(get_buyer_db)],
     buyer_id: Annotated[UUID, Depends(get_current_buyer_id)],
 ) -> list[BatchSummaryResponse]:
+    # Doble barrera: RLS en PostgreSQL (app.current_buyer_id) + filtro explícito por buyer_id.
     return await get_buyer_batches(session, buyer_id)
 
 
@@ -45,7 +45,7 @@ async def read_traceability(
         str,
         Path(min_length=1, max_length=100, description="Código único del lote"),
     ],
-    session: Annotated[AsyncSession, Depends(get_db)],
+    session: Annotated[AsyncSession, Depends(get_buyer_db)],
     buyer_id: Annotated[UUID, Depends(get_current_buyer_id)],
 ) -> TraceabilityResponse:
     try:

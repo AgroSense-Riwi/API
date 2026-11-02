@@ -2,7 +2,9 @@
 
 Implements business logic for:
 - SCRUM-159: PostGIS Spatial Intersection Engine to Detect Farm Overlaps with Protected Forest
-  Reserves (RN-09).
+  Reserves (RN-09). The spatial test runs in the database (``ST_Intersects`` of ``farms.geom``
+  against ``forest_reserves.geom``); a farm without geometry or without a spatial evaluation is
+  never considered compliant.
 - SCRUM-160: 100% Origin Volume Verification Rule Engine for Export Lot Batches (RN-08).
 - SCRUM-161: Batch Certification Workflow State Machine (EN_PROCESO, CERTIFICADO, RECHAZADO).
 """
@@ -14,6 +16,12 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 from uuid import UUID
+
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from agrosense_api.models.batch import ExportBatch
 
 
 class BatchCertificationStatus(str, Enum):
@@ -32,7 +40,8 @@ class ForestReserveOverlapResult:
     has_overlap: bool
     overlap_area_hectares: Decimal = Decimal("0.00")
     reserve_name: str | None = None
-    is_compliant: bool = True  # Cumple si NO tiene solapamiento no autorizado con reservas
+    is_compliant: bool = True  # Cumple sólo si fue evaluada y NO se solapa con reservas
+    evaluated: bool = True  # False => sin geometría / sin evaluación espacial (no conforme)
 
 
 @dataclass(frozen=True)
@@ -65,6 +74,13 @@ class BatchCertificationDecision:
         return self.current_status == BatchCertificationStatus.CERTIFICADO
 
 
+def _is_evaluated(overlap: dict[str, Any]) -> bool:
+    """Una evaluación sólo cuenta si declara explícitamente su resultado espacial."""
+    if overlap.get("geometry_evaluated") is False:
+        return False
+    return "has_overlap" in overlap or "overlap_area_hectares" in overlap
+
+
 class ForestReserveSpatialIntersectionEngine:
     """Motor de intersección espacial PostGIS para reservas forestales (RN-09 / SCRUM-159)."""
 
@@ -75,19 +91,33 @@ class ForestReserveSpatialIntersectionEngine:
         farm_geojson_or_wkt: str | dict[str, Any],
         known_overlaps: list[dict[str, Any]] | None = None,
     ) -> ForestReserveOverlapResult:
-        """Determina si una finca se cruza con reservas forestales protegidas."""
+        """Determina si una finca se cruza con reservas forestales protegidas.
+
+        ``known_overlaps`` son resultados de la evaluación espacial en PostGIS (ver
+        :func:`fetch_farm_spatial_compliance`). Sin evaluación, o con la geometría ausente,
+        el resultado es NO conforme: la ausencia de datos nunca certifica.
+        """
         overlaps = known_overlaps or []
         for ov in overlaps:
-            overlap_has_intersection = ov.get("has_overlap", False)
-            area_ha = Decimal(str(ov.get("overlap_area_hectares", 0)))
+            overlap_has_intersection = bool(ov.get("has_overlap", False))
+            area_ha = Decimal(str(ov.get("overlap_area_hectares") or 0))
             if overlap_has_intersection or area_ha > Decimal("0.00"):
                 return ForestReserveOverlapResult(
                     farm_id=farm_id,
                     has_overlap=True,
                     overlap_area_hectares=area_ha,
-                    reserve_name=ov.get("reserve_name", "Parque Nacional Natural"),
+                    reserve_name=ov.get("reserve_name") or "Reserva forestal protegida",
                     is_compliant=False,
                 )
+
+        if not overlaps or not all(_is_evaluated(ov) for ov in overlaps):
+            return ForestReserveOverlapResult(
+                farm_id=farm_id,
+                has_overlap=False,
+                overlap_area_hectares=Decimal("0.00"),
+                is_compliant=False,
+                evaluated=False,
+            )
 
         return ForestReserveOverlapResult(
             farm_id=farm_id,
@@ -118,6 +148,12 @@ class OriginVolumeVerificationRuleEngine:
         sum_contributed = Decimal("0.00")
         for c in compositions:
             contributed = Decimal(str(c.get("contributed_kg", 0.0)))
+            # Igual que el CHECK ck_batch_compositions_contributed_kg_positive: un aporte
+            # negativo o nulo compensaría artificialmente otros aportes (RN-08).
+            if contributed <= Decimal("0.00"):
+                raise ValueError(
+                    "Cada aporte de finca (contributed_kg) debe ser estrictamente mayor a 0."
+                )
             sum_contributed += contributed
 
         discrepancy = abs(total_weight_kg - sum_contributed)
@@ -153,17 +189,27 @@ class BatchCertificationStateMachine:
             compositions=compositions,
         )
 
-        # 2. Regla RN-09: Verificar superposiciones con reservas forestales
-        overlap_results: list[ForestReserveOverlapResult] = []
+        # 2. Regla RN-09: toda finca de origen necesita una evaluación espacial conforme.
         raw_overlaps = farm_overlaps or []
+        by_farm: dict[Any, list[dict[str, Any]]] = {}
         for ov_data in raw_overlaps:
-            f_id = ov_data.get("farm_id", batch_id)
-            eval_res = ForestReserveSpatialIntersectionEngine.evaluate_farm_polygons(
+            by_farm.setdefault(ov_data.get("farm_id", batch_id), []).append(ov_data)
+        for comp in compositions:
+            farm_id = comp.get("farm_id")
+            if farm_id is not None:
+                by_farm.setdefault(farm_id, [])
+        if not by_farm:
+            # Sin fincas ni evaluaciones no hay evidencia RN-09: se registra como no evaluada.
+            by_farm[batch_id] = []
+
+        overlap_results = [
+            ForestReserveSpatialIntersectionEngine.evaluate_farm_polygons(
                 farm_id=f_id,
                 farm_geojson_or_wkt={},
-                known_overlaps=[ov_data],
+                known_overlaps=farm_ovs,
             )
-            overlap_results.append(eval_res)
+            for f_id, farm_ovs in by_farm.items()
+        ]
 
         rejection_reasons: list[str] = []
         validation_errors: list[str] = []
@@ -175,12 +221,16 @@ class BatchCertificationStateMachine:
                 f"discrepancia de {vol_result.discrepancy_kg} kg)."
             )
 
-        violating_reserves = [o for o in overlap_results if not o.is_compliant]
-        if violating_reserves:
-            for vr in violating_reserves:
+        for vr in overlap_results:
+            if vr.has_overlap:
                 rejection_reasons.append(
                     f"Violación RN-09: Finca {vr.farm_id} posee solapamiento con la reserva "
                     f"protegida '{vr.reserve_name}' ({vr.overlap_area_hectares} ha)."
+                )
+            elif not vr.evaluated:
+                rejection_reasons.append(
+                    f"Violación RN-09: Finca {vr.farm_id} sin geometría o sin evaluación "
+                    "espacial contra reservas forestales; no puede certificarse."
                 )
 
         if rejection_reasons:
@@ -202,3 +252,92 @@ class BatchCertificationStateMachine:
             volume_verification=vol_result,
             forest_overlaps=overlap_results,
         )
+
+
+# ---------------------------------------------------------------------------
+# Evaluación espacial en PostGIS (RN-09)
+# ---------------------------------------------------------------------------
+
+FARM_SPATIAL_COMPLIANCE_SQL = text(
+    """
+    SELECT
+        f.farm_id,
+        f.geom IS NOT NULL AS geometry_evaluated,
+        (
+            COALESCE(sp.has_overlap, false)
+            OR f.overlaps_reserve
+            OR EXISTS (SELECT 1 FROM farm_reserve_overlaps o WHERE o.farm_id = f.farm_id)
+        ) AS has_overlap,
+        COALESCE(sp.overlap_ha, 0) AS overlap_area_hectares,
+        sp.reserve_names AS reserve_name
+    FROM farms f
+    LEFT JOIN LATERAL (
+        SELECT
+            bool_or(true) AS has_overlap,
+            SUM(ST_Area(ST_Intersection(f.geom, r.geom)::geography)) / 10000.0 AS overlap_ha,
+            string_agg(r.name, ', ' ORDER BY r.name) AS reserve_names
+        FROM forest_reserves r
+        WHERE f.geom IS NOT NULL AND ST_Intersects(f.geom, r.geom)
+    ) sp ON true
+    WHERE f.farm_id = ANY(:farm_ids)
+    """
+)
+
+
+async def fetch_farm_spatial_compliance(
+    session: AsyncSession, farm_ids: list[UUID]
+) -> list[dict[str, Any]]:
+    """Evalúa en PostGIS (``ST_Intersects``) cada finca contra ``forest_reserves``.
+
+    Una finca también se considera solapada si ``farms.overlaps_reserve`` está marcado o tiene
+    registros en ``farm_reserve_overlaps``. Fincas inexistentes no aparecen en el resultado y,
+    por tanto, quedan sin evaluación (no conformes) en :class:`BatchCertificationStateMachine`.
+    """
+    if not farm_ids:
+        return []
+    result = await session.execute(FARM_SPATIAL_COMPLIANCE_SQL, {"farm_ids": list(farm_ids)})
+    return [
+        {
+            "farm_id": row.farm_id,
+            "geometry_evaluated": bool(row.geometry_evaluated),
+            "has_overlap": bool(row.has_overlap),
+            "overlap_area_hectares": Decimal(str(row.overlap_area_hectares or 0)).quantize(
+                Decimal("0.01")
+            ),
+            "reserve_name": row.reserve_name,
+        }
+        for row in result
+    ]
+
+
+async def evaluate_batch_certification(
+    session: AsyncSession, batch_id: UUID
+) -> BatchCertificationDecision:
+    """Evalúa RN-08 + RN-09 de un lote leyendo composición y geometría desde la BD.
+
+    ``export_batches`` está protegido por RLS: la sesión debe tener el contexto de operador
+    (``get_operator_db``) para ver el lote.
+    """
+    batch = await session.scalar(
+        select(ExportBatch)
+        .options(selectinload(ExportBatch.compositions))
+        .where(ExportBatch.batch_id == batch_id)
+    )
+    if batch is None:
+        raise LookupError(f"Lote de exportación {batch_id} no encontrado")
+
+    compositions = [
+        {"farm_id": comp.farm_id, "contributed_kg": comp.contributed_kg}
+        for comp in batch.compositions
+    ]
+    farm_ids = sorted({c["farm_id"] for c in compositions if c["farm_id"] is not None}, key=str)
+    overlaps = await fetch_farm_spatial_compliance(session, farm_ids)
+    if any(c["farm_id"] is None for c in compositions):
+        # Aporte sin finca de origen: imposible verificar RN-09 para ese volumen.
+        overlaps.append({"farm_id": "sin-finca-de-origen", "geometry_evaluated": False})
+    return BatchCertificationStateMachine.evaluate_batch(
+        batch_id=batch.batch_id,
+        total_weight_kg=batch.total_weight_kg,
+        compositions=compositions,
+        farm_overlaps=overlaps,
+    )

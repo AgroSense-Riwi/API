@@ -72,7 +72,11 @@ def test_agro13_ecs_fargate_alb_and_autoscaling_config() -> None:
     assert api_td["requiresCompatibilities"] == ["FARGATE"]
     assert api_td["networkMode"] == "awsvpc"
     assert broker_td["requiresCompatibilities"] == ["FARGATE"]
-    assert '--health-check-path "/health"' in setup_script
+    # ALB y contenedor usan liveness (/health/live) para evitar flapping; /health es readiness.
+    assert 'API_HEALTH_CHECK_PATH="/health/live"' in setup_script
+    assert '--health-check-path "${API_HEALTH_CHECK_PATH}"' in setup_script
+    api_container = next(c for c in api_td["containerDefinitions"] if c["name"] == "agrosense-api")
+    assert "http://localhost:8000/health/live" in " ".join(api_container["healthCheck"]["command"])
 
     # SCRUM-140: ECS Auto-Scaling policies (CPU 70% & Memory 75%, min=1, max=4)
     assert "register-scalable-target" in setup_script

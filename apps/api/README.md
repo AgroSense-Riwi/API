@@ -6,115 +6,132 @@ FastAPI service package. Run from the repository root with:
 uv run --package agrosense-api fastapi dev apps/api/src/agrosense_api/script.py
 ```
 
-The API exposes public `GET /health` and JWT-protected routes under `/api/v1`.
+With Docker Compose (`docker compose up -d --build` from the repository root) the API,
+the telemetry consumer, PostgreSQL/PostGIS, RabbitMQ and Airflow start together; see the
+root `README.md`.
+
+## Routes
+
+| Method & path | Auth | Purpose |
+| --- | --- | --- |
+| `GET /health` | public | Readiness: `{status, database, rabbitmq, storage}`; `503` if PostgreSQL or RabbitMQ is unreachable |
+| `GET /health/live` | public | Liveness only (used by the ECS container health check and the ALB) |
+| `POST /api/v1/auth/token` | OAuth2 form `username`, `password` | Operator token; `username` is the user's email (or the bootstrap user). The token carries the user's real role |
+| `POST /api/v1/auth/buyer-token` | JSON `{"client_id", "api_key"}` | Buyer token (`traceability:read`, `buyer_id` claim) after verifying the buyer's Argon2 `api_key_hash` |
+| `POST /api/v1/telemetry` | operator token, role `ADMIN` or `AGRONOMIST` | Publishes a reading to `agrosense.ingest.exchange` (routing key `telemetry.block.<farm_id>` → `telemetry.raw.queue`); `202` with `event_id` |
+| `GET /api/v1/traceability/batches` | buyer token | Lots contractually assigned to the authenticated buyer |
+| `GET /api/v1/traceability/{batch_code}` | buyer token | Traceability/certificate of one of the buyer's lots (`404` if it is not visible to that buyer) |
+
+Interactive documentation: `/docs` (Swagger UI) and `/redoc`; the OpenAPI 3.0.3 contract is
+served at `/openapi.json`.
+
+## Configuration
+
 Configure the service with `AGROSENSE_` environment variables:
 
 | Variable | Purpose |
 | --- | --- |
-| `AGROSENSE_DATABASE_URL` | SQLAlchemy async URL; use `postgresql+asyncpg://...` for PostGIS |
+| `AGROSENSE_DATABASE_URL` | SQLAlchemy async URL (`postgresql+asyncpg://agrosense_app:...`). Use the non-owner `agrosense_app` role so RLS applies |
 | `AGROSENSE_DATABASE_POOL_SIZE` | SQLAlchemy connection pool size (default: 10) |
 | `AGROSENSE_DATABASE_MAX_OVERFLOW` | Additional connections allowed above the pool size (default: 20) |
 | `AGROSENSE_DATABASE_POOL_TIMEOUT_SECONDS` | Seconds to wait for a pooled connection (default: 30) |
 | `AGROSENSE_DATABASE_POOL_RECYCLE_SECONDS` | Connection recycle interval (default: 1800) |
-| `AGROSENSE_JWT_SECRET_KEY` | Long random secret used to sign access tokens |
+| `AGROSENSE_JWT_SECRET_KEY` | Secret (32+ chars) used to sign operator tokens |
 | `AGROSENSE_JWT_ACCESS_TOKEN_MINUTES` | Access-token lifetime (default: 30) |
-| `AGROSENSE_BUYER_JWT_SECRET_KEY` | Separate signing secret for buyer access tokens |
-| `AGROSENSE_BUYER_JWT_ISSUER` | Trusted buyer-token issuer (default: `agrosense-buyer-auth`) |
-| `AGROSENSE_AUTH_USERNAME` | Single configured API operator |
-| `AGROSENSE_AUTH_PASSWORD_HASH` | Passlib Argon2 hash for the operator password |
+| `AGROSENSE_BUYER_JWT_SECRET_KEY` | Separate secret (32+ chars) for buyer tokens |
+| `AGROSENSE_BUYER_JWT_ISSUER` | Buyer-token issuer (default: `agrosense-buyer-auth`) |
+| `AGROSENSE_AUTH_USERNAME` | Optional bootstrap operator (always role `ADMIN`) |
+| `AGROSENSE_AUTH_PASSWORD_HASH` | Argon2 hash of the bootstrap operator password |
 | `AGROSENSE_AUTH_SCOPES` | JSON array of OAuth scopes granted to issued tokens |
-| `AGROSENSE_RABBITMQ_URL` | AMQP URL for telemetry publishing |
+| `AGROSENSE_RABBITMQ_URL` | AMQP URL including the vhost, e.g. `amqp://user:pass@broker:5672/%2Fagrosense` |
+| `AGROSENSE_TELEMETRY_CONSUMER_PREFETCH` | Unacknowledged messages held by the consumer (default: 50) |
 | `AGROSENSE_ALLOWED_ORIGINS` | JSON array of allowed browser origins |
 
-Create an Argon2 password hash with:
+`DATABASE_URL` (sync, table owner) is used only by Alembic in `entrypoint.sh`.
+
+## Provisioning credentials
+
+Secrets are hashed with Argon2; never commit them.
 
 ```powershell
-uv run --package agrosense-api python -c "from passlib.context import CryptContext; print(CryptContext(schemes=['argon2']).hash('REPLACE_ME'))"
+# Hash a password (prompts without echo; also accepts stdin)
+uv run --package agrosense-api python -m agrosense_api.cli hash-secret
+
+# New buyer API key: prints the key (hand it to the buyer once) and its hash
+uv run --package agrosense-api python -m agrosense_api.cli new-buyer-key
 ```
 
-For deployment, set a generated password and secret through the secret manager;
-do not commit them. The local default database URL is SQLite for basic API-only development; the
-spatial Farm model and all database-backed routes require PostgreSQL with
-PostGIS. Apply migrations with
-`uv run --package agrosense-api alembic -c apps/api/alembic.ini upgrade head`.
-Rate limits use SlowAPI's in-process storage and should be backed by shared
-storage when running multiple workers.
+Store the results with the owner role (for example from `psql`):
 
-The soil recommendations are intentionally conservative screening rules, not
-fertilizer prescriptions; confirm measurements and treatments with a qualified
-agronomist.
+```sql
+-- Operator: roles AGRONOMIST, QUALITY_CHIEF, SUSTAINABILITY_COMMITTEE or ADMIN
+UPDATE users SET email = 'ana@example.com', password_hash = '<argon2 hash>', is_active = true
+WHERE user_id = '<uuid>';
 
-## Connect to PostgreSQL/PostGIS
+-- Buyer: client_id is the public identifier, api_key_hash the stored secret hash
+UPDATE international_buyers SET api_key_hash = '<argon2 hash>', is_active = true
+WHERE client_id = '<client_id>';
+```
 
-Create a PostgreSQL database with PostGIS enabled, then set the service
-environment before starting it. For local PowerShell development, for example:
+Users or buyers without `password_hash` / `api_key_hash` (e.g. rows created by the seed)
+cannot authenticate. Inside Docker Compose run the CLI with
+`docker compose run --rm --no-deps --entrypoint python api -m agrosense_api.cli hash-secret`.
+
+## Database, migrations and buyer isolation (RN-11)
+
+Apply migrations with the owner role:
 
 ```powershell
-$env:AGROSENSE_DATABASE_URL = "postgresql+asyncpg://USER:PASSWORD@localhost:5432/agrosense"
-$env:AGROSENSE_JWT_SECRET_KEY = "REPLACE_WITH_A_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS"
-$env:AGROSENSE_AUTH_USERNAME = "operator"
-$env:AGROSENSE_AUTH_PASSWORD_HASH = "REPLACE_WITH_THE_ARGON2_HASH"
+$env:DATABASE_URL = "postgresql+psycopg://OWNER:PASSWORD@localhost:5432/agrosense_db"
 uv run --package agrosense-api alembic -c apps/api/alembic.ini upgrade head
-uv run --package agrosense-api fastapi dev apps/api/src/agrosense_api/script.py
 ```
 
-Use a secret manager for deployed credentials rather than committing a `.env`
-file. The migration creates the initial schema, PostGIS geometry columns,
-spatial indexes, and the composition-protection trigger. Review it against any
-existing database before applying it; it is an initial schema, not a data
-migration for an existing production schema.
+`export_batches` and `buyer_batch_contracts` use `FORCE ROW LEVEL SECURITY` with
+deny-by-default policies: the buyer endpoints run `SET LOCAL app.current_buyer_id` (via
+`set_config(..., true)`) inside the request transaction, so a buyer only sees rows linked to
+its own contracts and a session without that variable sees none. Internal code that needs
+every row must authenticate an operator and use `get_operator_db(...)`, which sets
+`SET LOCAL app.current_role = 'operator'`. The application role `agrosense_app` must not own
+the tables nor have `BYPASSRLS`; Docker creates it in
+`infra/docker/postgres/init/02-create-app-role.sh` and the EC2 server needs
+`infra/aws/ec2-postgres-app-role.sql` once.
 
-Interactive API documentation is available at `/docs` (Swagger UI) and
-`/redoc`; the generated contract is OpenAPI 3.0.3 at `/openapi.json`.
+## Certification rules (RN-08 / RN-09)
 
-## API integration flow
+`services/certification_engine.py` evaluates a lot:
 
-1. Configure the operator credentials and request a token from
-   `POST /api/v1/auth/token` using OAuth2 form fields `username` and `password`.
-   Send the returned access token as `Authorization: Bearer <token>`.
-2. Buyer certificates are grouped separately under the `Compradores` tag in
-   Swagger and Redoc. `GET /api/v1/traceability/{batch_code}` requires a
-   signed buyer JWT with a `buyer_id` UUID claim and the
-   `traceability:read` scope. The API filters by both batch code and that
-   buyer ID; a lot assigned to another buyer returns HTTP 403, while an
-   unknown code returns HTTP 404.
-3. The current `/api/v1/auth/token` endpoint issues operator tokens only; it
-   does not create buyer identities or buyer tokens. Configure a separate,
-   strong `AGROSENSE_BUYER_JWT_SECRET_KEY` and the expected issuer, then
-   connect a trusted identity provider that issues buyer tokens with those
-   settings and the required claims. Keep the buyer signing secret separate
-   from `AGROSENSE_JWT_SECRET_KEY`; do not use a caller-supplied `X-Buyer-ID`
-   header for access control because clients can forge it.
-4. Load farm boundaries as PostGIS polygons, regional `water_usage_m3_ton`
-   baselines, the forest-reserve boundary catalog, and positive
-   `batch_farm_compositions` before certification. Composition contributions
-   must sum exactly to the lot's positive net weight.
-5. Internal API consumers can read `GET /api/v1/lots/{lot_id}` and
-   `GET /api/v1/farms/{farm_id}`. Submit `POST /api/v1/lots/certify` with
-   `{"lot_id": "<UUID>"}`
-   to validate origin, reserve intersections, and an SCA score from 80 through
-   100, and atomically store the certificate and traceability event. The
-   latest fertilizer recommendation is used when present; otherwise its
-   weighted reduction is zero.
-6. Connect telemetry producers to `POST /api/v1/telemetry`; configure
-   `AGROSENSE_RABBITMQ_URL` and provision the configured queue when enabling
-   RabbitMQ publishing.
+- RN-08: contributions must be positive and add up to the lot's net weight.
+- RN-09: each origin farm is intersected in PostGIS (`ST_Intersects(farms.geom,
+  forest_reserves.geom)`); `farms.overlaps_reserve` is kept up to date by the
+  `trg_check_farm_forest_overlap` trigger. A farm without geometry or without spatial
+  evaluation is **not** compliant, so the lot is rejected.
 
-The database query paths include eager-loaded lot composition, paginated farm
-contribution history, pooled async connections, and PostGIS spatial indexes.
-The p95 target still needs to be measured on representative staging data and
-infrastructure; run the opt-in benchmark after deployment:
+Load farm perimeters into `farms.geom` and reserve polygons into `forest_reserves.geom`
+(both `POLYGON`, SRID 4326) before certifying.
+
+## Telemetry consumer
+
+The FastConsumer runs as its own process (Compose service `telemetry-consumer`, second
+container of the API Fargate task):
 
 ```powershell
-$env:AGROSENSE_PERF_BASE_URL = "https://STAGING_API_HOST"
-$env:AGROSENSE_PERF_TOKEN = "STAGING_ACCESS_TOKEN"
-$env:AGROSENSE_PERF_LOT_ID = "LOT_UUID"
-$env:AGROSENSE_PERF_FARM_ID = "FARM_UUID"
-uv run --package agrosense-api pytest apps/api/tests/test_latency_sla.py
+uv run --package agrosense-api python -m agrosense_api.workers.telemetry_consumer
 ```
 
-Run API contract and certification tests locally with:
+It consumes `telemetry.raw.queue` with manual ACK, validates, deduplicates and orders the
+readings per sensor, and sends invalid payloads to `dead.letter.queue` through the DLX.
+
+## Tests
 
 ```powershell
-uv run --package agrosense-api pytest apps/api/tests
+uv run pytest apps/api/tests
 ```
+
+Database tests use `TEST_DATABASE_URL` (schema created by the tests) and
+`TEST_MIGRATED_DATABASE_URL` (a database migrated with `alembic upgrade head`, used by the
+RLS and PostGIS tests); they are skipped when those variables are not set. The SCRUM-171
+benchmark reads the Kaggle dataset from `AGROSENSE_CROP_RECOMMENDATION_CSV`.
+
+Rate limits use SlowAPI's in-process storage and should be backed by shared storage when
+running multiple workers. The soil recommendations are conservative screening rules, not
+fertilizer prescriptions.

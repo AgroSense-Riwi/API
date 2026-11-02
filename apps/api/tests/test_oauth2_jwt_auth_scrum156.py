@@ -26,6 +26,7 @@ from agrosense_api.core.security import (
     hash_password,
     verify_password,
 )
+from agrosense_api.models import User
 from agrosense_api.schemas.auth import AuthenticatedUser
 from agrosense_api.script import app
 from fastapi import HTTPException
@@ -85,7 +86,7 @@ def test_password_hashing_and_verification() -> None:
 
 def test_create_and_decode_access_token() -> None:
     username = "admin@agrosense.com"
-    token = create_access_token(username)
+    token = create_access_token(username, role="ADMIN")
 
     assert isinstance(token, str)
     claims = decode_access_token(token)
@@ -99,7 +100,7 @@ def test_create_and_decode_access_token() -> None:
 
 
 def test_decode_access_token_tampered_fails() -> None:
-    token = create_access_token("admin@agrosense.com")
+    token = create_access_token("admin@agrosense.com", role="ADMIN")
     tampered_token = token[:-5] + "aaaaa"
 
     with pytest.raises(jwt.InvalidTokenError):
@@ -160,6 +161,8 @@ def test_issue_token_success(client: TestClient) -> None:
     # Verify that the generated token is decodable
     claims = decode_access_token(data["access_token"])
     assert claims["sub"] == "admin@agrosense.com"
+    # El usuario bootstrap configurado por entorno recibe ADMIN de forma explícita.
+    assert claims["role"] == "ADMIN"
 
 
 def test_issue_token_wrong_password(client: TestClient) -> None:
@@ -174,7 +177,8 @@ def test_issue_token_wrong_password(client: TestClient) -> None:
     assert response.json()["error"]["message"] == "Incorrect username or password"
 
 
-def test_issue_token_wrong_username(client: TestClient) -> None:
+def test_issue_token_wrong_username(client: TestClient, override_db) -> None:
+    override_db(None)  # el usuario no existe en la tabla users
     response = client.post(
         "/api/v1/auth/token",
         data={
@@ -187,7 +191,7 @@ def test_issue_token_wrong_username(client: TestClient) -> None:
 
 
 def test_issue_token_unconfigured_auth(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AGROSENSE_AUTH_USERNAME", "")
+    monkeypatch.setenv("AGROSENSE_JWT_SECRET_KEY", "")
     get_settings.cache_clear()
 
     response = client.post(
@@ -201,6 +205,81 @@ def test_issue_token_unconfigured_auth(client: TestClient, monkeypatch: pytest.M
     assert "Authentication is not configured" in response.json()["error"]["message"]
 
 
+def _db_user(role: str, *, is_active: bool = True, password: str = "AgronomistPass1!") -> User:  # noqa: S107
+    return User(
+        user_id=uuid4(),
+        full_name="Ana Agronoma",
+        role=role,
+        email="ana@agrosense.com",
+        password_hash=hash_password(password),
+        is_active=is_active,
+    )
+
+
+def test_issue_token_for_db_user_carries_real_role(client: TestClient, override_db) -> None:
+    override_db(_db_user("AGRONOMIST"))
+    response = client.post(
+        "/api/v1/auth/token",
+        data={"username": "ana@agrosense.com", "password": "AgronomistPass1!"},  # noqa: S106
+    )
+    assert response.status_code == 200
+    claims = decode_access_token(response.json()["access_token"])
+    assert claims["sub"] == "ana@agrosense.com"
+    assert claims["role"] == "AGRONOMIST"
+
+
+def test_issue_token_rejects_inactive_db_user(client: TestClient, override_db) -> None:
+    override_db(_db_user("QUALITY_CHIEF", is_active=False))
+    response = client.post(
+        "/api/v1/auth/token",
+        data={"username": "ana@agrosense.com", "password": "AgronomistPass1!"},  # noqa: S106
+    )
+    assert response.status_code == 401
+
+
+def test_issue_token_rejects_db_user_wrong_password(client: TestClient, override_db) -> None:
+    override_db(_db_user("ADMIN"))
+    response = client.post(
+        "/api/v1/auth/token",
+        data={"username": "ana@agrosense.com", "password": "wrong"},  # noqa: S106
+    )
+    assert response.status_code == 401
+
+
+def test_issue_token_rejects_db_user_with_unknown_role(client: TestClient, override_db) -> None:
+    override_db(_db_user("OPERATOR"))
+    response = client.post(
+        "/api/v1/auth/token",
+        data={"username": "ana@agrosense.com", "password": "AgronomistPass1!"},  # noqa: S106
+    )
+    assert response.status_code == 401
+
+
+def test_create_access_token_requires_known_role() -> None:
+    with pytest.raises(ValueError):
+        create_access_token("someone@agrosense.com", role="SUPERUSER")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("role_claim", [None, "", "OPERATOR", "BUYER"])
+async def test_get_current_user_rejects_missing_or_unknown_role(role_claim: str | None) -> None:
+    now = datetime.now(UTC)
+    claims = {
+        "sub": "admin@agrosense.com",
+        "iss": "agrosense-api",
+        "scope": "lots:read",
+        "iat": now,
+        "exp": now + timedelta(minutes=5),
+    }
+    if role_claim is not None:
+        claims["role"] = role_claim
+    token = jwt.encode(claims, TEST_JWT_SECRET, algorithm="HS256")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_user(token=token, security_scopes=SecurityScopes(scopes=[]))
+    assert exc_info.value.status_code == 401
+
+
 # ==========================================
 # 5. Dependency & RBAC / Scope Validation Tests
 # ==========================================
@@ -208,7 +287,7 @@ def test_issue_token_unconfigured_auth(client: TestClient, monkeypatch: pytest.M
 
 @pytest.mark.anyio
 async def test_get_current_user_valid_token_and_scope() -> None:
-    token = create_access_token("admin@agrosense.com")
+    token = create_access_token("admin@agrosense.com", role="ADMIN")
     security_scopes = SecurityScopes(scopes=["lots:read"])
 
     user = await get_current_user(token=token, security_scopes=security_scopes)
@@ -219,7 +298,7 @@ async def test_get_current_user_valid_token_and_scope() -> None:
 
 @pytest.mark.anyio
 async def test_get_current_user_insufficient_permissions() -> None:
-    token = create_access_token("admin@agrosense.com")
+    token = create_access_token("admin@agrosense.com", role="ADMIN")
     security_scopes = SecurityScopes(scopes=["admin:all_powerful"])
 
     with pytest.raises(HTTPException) as exc_info:

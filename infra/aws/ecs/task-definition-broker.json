@@ -55,7 +55,7 @@
         }
       ],
       "environment": [
-        { "name": "RABBITMQ_DEFAULT_VHOST", "value": "/" }
+        { "name": "RABBITMQ_DEFAULT_VHOST", "value": "/agrosense" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

@@ -18,7 +18,7 @@
         }
       ],
       "healthCheck": {
-        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health/live || exit 1"],
         "interval": 30,
         "timeout": 5,
         "retries": 3,
@@ -51,6 +51,14 @@
           "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/buyer-jwt-secret-yT4Uk2"
         },
         {
+          "name": "AGROSENSE_AUTH_USERNAME",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/auth-username"
+        },
+        {
+          "name": "AGROSENSE_AUTH_PASSWORD_HASH",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/auth-password-hash"
+        },
+        {
           "name": "S3_BUCKET",
           "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/s3-bucket-LXXZkV"
         }
@@ -61,6 +69,36 @@
           "awslogs-group": "/ecs/agrosense-api",
           "awslogs-region": "${AWS_REGION}",
           "awslogs-stream-prefix": "api",
+          "awslogs-create-group": "true"
+        }
+      }
+    },
+    {
+      "name": "agrosense-telemetry-consumer",
+      "image": "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/agrosense-api:latest",
+      "essential": false,
+      "command": ["python", "-m", "agrosense_api.workers.telemetry_consumer"],
+      "dependsOn": [
+        {
+          "containerName": "agrosense-api",
+          "condition": "START"
+        }
+      ],
+      "environment": [
+        { "name": "SKIP_MIGRATIONS", "value": "true" }
+      ],
+      "secrets": [
+        {
+          "name": "AGROSENSE_RABBITMQ_URL",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/rabbitmq-url-skA1ZA"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/agrosense-api",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "telemetry-consumer",
           "awslogs-create-group": "true"
         }
       }

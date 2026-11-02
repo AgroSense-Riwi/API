@@ -126,9 +126,7 @@ class SparkResourceAllocationOptimizer:
         )
 
     @classmethod
-    def get_preset_for_workload(
-        cls, profile: ClusterWorkloadProfile
-    ) -> SparkClusterResourceConfig:
+    def get_preset_for_workload(cls, profile: ClusterWorkloadProfile) -> SparkClusterResourceConfig:
         """Devuelve configuraciones estándar pre-optimizadas según el volumen de datos."""
         if profile == ClusterWorkloadProfile.LIGHT:
             # 2 nodos m5.xlarge (4 vCPU, 16 GB RAM)

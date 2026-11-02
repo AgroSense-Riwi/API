@@ -2,15 +2,19 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from agrosense_api.api.v1.dependencies import get_current_user
+from agrosense_api.api.v1.dependencies import require_roles
 from agrosense_api.core.rate_limit import limiter
+from agrosense_api.core.security import ROLE_ADMIN, ROLE_AGRONOMIST
 from agrosense_api.schemas.telemetry import TelemetryAccepted, TelemetryCreate
 from agrosense_api.services.messaging import MessageBrokerUnavailable, publish_telemetry
+
+# Escritura de telemetría: personal de campo (AGRONOMIST) y administradores.
+TELEMETRY_WRITE_ROLES = (ROLE_ADMIN, ROLE_AGRONOMIST)
 
 router = APIRouter(
     prefix="/telemetry",
     tags=["telemetry"],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(require_roles(*TELEMETRY_WRITE_ROLES))],
 )
 
 

@@ -34,7 +34,27 @@ El entorno completo (PostgreSQL/PostGIS, RabbitMQ, FastAPI con migraciones autom
 cp .env.example .env && docker compose up -d --build
 ```
 
-> **Nota sobre `.env` (CT-02)**: Antes de usar en entornos compartidos, reemplaza los valores placeholder `changeme` en tu archivo `.env` local (especialmente `POSTGRES_PASSWORD`, `RABBITMQ_DEFAULT_PASS`, `AGROSENSE_JWT_SECRET_KEY` y `AIRFLOW__CORE__FERNET_KEY`).
+La plantilla trae placeholders **solo para desarrollo local** que ya cumplen las validaciones
+(secretos JWT de 32+ caracteres, clave Fernet válida), así que el stack arranca sin editar nada:
+API en `http://localhost:8000/docs`, Airflow en `http://localhost:8080` (usuario
+`AIRFLOW_ADMIN_USER` / `AIRFLOW_ADMIN_PASSWORD`) y el consumidor de telemetría
+`telemetry-consumer` leyendo `telemetry.raw.queue` (vhost `/agrosense`).
+
+```bash
+# 2. (Para obtener tokens de operador) generar el hash Argon2 del usuario bootstrap ADMIN...
+docker compose run --rm --no-deps --entrypoint python api -m agrosense_api.cli hash-secret
+# ...pegarlo en .env ENTRE COMILLAS SIMPLES (contiene '$') y recrear la API:
+#   AGROSENSE_AUTH_PASSWORD_HASH='$argon2id$v=19$...'
+docker compose up -d api
+
+# 3. Pedir un token (usuario = AGROSENSE_AUTH_USERNAME)
+curl -X POST http://localhost:8000/api/v1/auth/token \
+  -d "username=admin@agrosense.local" -d "password=<tu-contraseña>"
+```
+
+> **Nota sobre `.env` (CT-02)**: Antes de usar en entornos compartidos, reemplaza todos los valores marcados `changeme` en tu `.env` (especialmente `POSTGRES_PASSWORD`, `AGROSENSE_APP_DB_PASSWORD`, `RABBITMQ_DEFAULT_PASS`, `AGROSENSE_JWT_SECRET_KEY`, `AGROSENSE_BUYER_JWT_SECRET_KEY`, `AIRFLOW_ADMIN_PASSWORD` y `AIRFLOW__CORE__FERNET_KEY`). Si cambias `AGROSENSE_APP_DB_PASSWORD` o vienes de una versión anterior, recrea el volumen de PostgreSQL (`docker compose down -v`): el rol `agrosense_app` de la API se crea solo al inicializar el volumen.
+
+> **Roles de base de datos (RN-11)**: Alembic y el seed usan el rol dueño (`DATABASE_URL`, `POSTGRES_USER`); la API usa `agrosense_app` (`AGROSENSE_DATABASE_URL`), que no es dueño ni tiene `BYPASSRLS`, para que las políticas RLS por comprador se apliquen siempre.
 
 ### Verificación Automatizada de Bootstrapping (SLA < 30 min)
 Para ejecutar la prueba automatizada que cronometra el arranque completo y verifica que todos los servicios pasen sus healthchecks dentro del SLA de 30 minutos (1800s):
@@ -56,8 +76,11 @@ docker compose ps
 # 2. Inspeccionar en tiempo real los logs de la API (incluye la ejecución de Alembic en entrypoint.sh)
 docker compose logs -f api
 
-# 3. Validar el endpoint HTTP de salud de FastAPI
+# 3. Validar el endpoint HTTP de salud de FastAPI (readiness: BD + RabbitMQ; 503 si falla alguna)
 curl -f http://localhost:8000/health
+
+# 4. Liveness (sin dependencias; lo usan el contenedor ECS y el ALB)
+curl -f http://localhost:8000/health/live
 ```
 
 ---
@@ -99,8 +122,8 @@ docker volume prune -f
 ## 6. Desarrollo Local y Calidad de Código
 
 ```bash
-# Sincronizar dependencias del workspace con uv
-uv sync --locked
+# Sincronizar dependencias de todo el workspace (API + simuladores) con uv
+uv sync --locked --all-packages
 
 # Ejecutar linters, formateadores y escaneo de secretos (gitleaks)
 uv run pre-commit run --all-files

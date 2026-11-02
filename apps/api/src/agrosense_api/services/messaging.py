@@ -124,7 +124,18 @@ async def declare_rabbitmq_topology(
     }
 
 
+def telemetry_routing_key(telemetry: TelemetryCreate) -> str:
+    """Routing key ``telemetry.block.<farm_id>`` (casa con el binding ``telemetry.block.#``)."""
+    return f"telemetry.block.{telemetry.farm_id}"
+
+
 async def publish_telemetry(event_id: UUID, telemetry: TelemetryCreate) -> None:
+    """Publica la lectura en ``agrosense.ingest.exchange`` -> ``telemetry.raw.queue`` (rabbitmq.md).
+
+    La topología se declara de forma idempotente antes de publicar (los argumentos coinciden
+    con ``infra/docker/rabbitmq/definitions.json``), y el publish usa confirmaciones del broker
+    con ``mandatory`` para que un mensaje no enrutable no se pierda en silencio.
+    """
     settings = get_settings()
     broker_url = settings.rabbitmq_url
     if broker_url is None or not broker_url.get_secret_value():
@@ -134,7 +145,7 @@ async def publish_telemetry(event_id: UUID, telemetry: TelemetryCreate) -> None:
         connection = await aio_pika.connect_robust(broker_url.get_secret_value())
         async with connection:
             channel = await connection.channel(publisher_confirms=True)
-            queue = await channel.declare_queue(settings.telemetry_queue, durable=True)
+            topology = await declare_rabbitmq_topology(channel)
             message = aio_pika.Message(
                 body=json.dumps(
                     {"event_id": str(event_id), **telemetry.model_dump(mode="json")}
@@ -143,7 +154,11 @@ async def publish_telemetry(event_id: UUID, telemetry: TelemetryCreate) -> None:
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
                 message_id=str(event_id),
             )
-            await channel.default_exchange.publish(message, routing_key=queue.name)
+            await topology["ingest_exchange"].publish(
+                message,
+                routing_key=telemetry_routing_key(telemetry),
+                mandatory=True,
+            )
     except (TimeoutError, aio_pika.exceptions.AMQPException, OSError) as exc:
         logger.exception("Unable to publish telemetry event %s", event_id)
         raise MessageBrokerUnavailable("Telemetry broker is unavailable") from exc

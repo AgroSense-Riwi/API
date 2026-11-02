@@ -10,5 +10,5 @@ class AuthenticatedUser(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     username: str
-    role: str = "ADMIN"
+    role: str
     scopes: list[str] = Field(default_factory=list)

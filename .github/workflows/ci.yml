@@ -1,22 +1,61 @@
 name: CI
 on:
   pull_request:
-    branches: [dev]
+    branches: [dev, main]
   push:
     branches: [dev]
+  # Reutilizado por deploy-ecs.yml como puerta de calidad obligatoria antes de desplegar.
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   quality:
     runs-on: ubuntu-latest
+    services:
+      # PostgreSQL + PostGIS efímero para los tests de BD, RLS (RN-11) y PostGIS (RN-09).
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_USER: agrosense_ci
+          POSTGRES_PASSWORD: agrosense_ci
+          POSTGRES_DB: agrosense_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agrosense_ci -d agrosense_test_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # Base para tests que crean/borran el esquema con SQLAlchemy (integration/).
+      TEST_DATABASE_URL: postgresql+psycopg://agrosense_ci:agrosense_ci@localhost:5432/agrosense_test_db
+      # Base migrada con Alembic (políticas RLS, triggers PostGIS) para RLS / RN-09.
+      TEST_MIGRATED_DATABASE_URL: postgresql+psycopg://agrosense_ci:agrosense_ci@localhost:5432/agrosense_migrated_test_db
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
       - run: uv sync --locked --all-packages
-      # Ejecuta ruff y los checks; si ruff-format reformatea archivos en el runner, no bloquea el CI
-      - run: uv run pre-commit run --all-files || uv run pre-commit run --all-files
-      - run: uv run pytest
+      # Una sola ejecución: si un hook modifica archivos o falla, el job falla.
+      - run: uv run pre-commit run --all-files --show-diff-on-failure
+      - name: Crear y migrar la base de pruebas (alembic upgrade head)
+        env:
+          DATABASE_URL: ${{ env.TEST_MIGRATED_DATABASE_URL }}
+        run: |
+          uv run python - <<'PY'
+          import psycopg
+          with psycopg.connect(
+              "postgresql://agrosense_ci:agrosense_ci@localhost:5432/agrosense_test_db",
+              autocommit=True,
+          ) as conn:
+              conn.execute("DROP DATABASE IF EXISTS agrosense_migrated_test_db")
+              conn.execute("CREATE DATABASE agrosense_migrated_test_db")
+          PY
+          uv run alembic -c apps/api/alembic.ini upgrade head
+      - run: uv run pytest -rs
 
   secrets:
     runs-on: ubuntu-latest

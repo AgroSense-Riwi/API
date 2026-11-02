@@ -11,7 +11,8 @@
 #
 # Uso:
 #   chmod +x infra/aws/setup-ecs-infra.sh
-#   ./infra/aws/setup-ecs-infra.sh
+#   ACM_CERTIFICATE_ARN=arn:aws:acm:us-east-2:<cuenta>:certificate/<id> ./infra/aws/setup-ecs-infra.sh
+#   (sin ACM_CERTIFICATE_ARN sólo se crea HTTP:80 y se muestra una advertencia)
 # ==============================================================================
 set -euo pipefail
 
@@ -32,6 +33,14 @@ PUBLIC_SUBNET_1_CIDR="10.0.1.0/24"
 PUBLIC_SUBNET_2_CIDR="10.0.2.0/24"
 PRIVATE_SUBNET_1_CIDR="10.0.3.0/24"
 PRIVATE_SUBNET_2_CIDR="10.0.4.0/24"
+# Liveness del ALB/ECS: /health/live no depende de BD ni broker, así una caída transitoria
+# de una dependencia no hace que ECS recicle todas las tareas. /health (readiness con 503)
+# queda para monitoreo y para Docker Compose (healthcheck_strategy.md).
+API_HEALTH_CHECK_PATH="/health/live"
+# ARN de un certificado ACM emitido en la misma región que el ALB (us-east-2). Si se deja
+# vacío el script NO crea HTTPS y lo advierte. Ej.: ACM_CERTIFICATE_ARN=arn:aws:acm:... ./setup-ecs-infra.sh
+ACM_CERTIFICATE_ARN="${ACM_CERTIFICATE_ARN:-}"
+ALB_SSL_POLICY="${ALB_SSL_POLICY:-ELBSecurityPolicy-TLS13-1-2-2021-06}"
 
 echo "=============================================="
 echo " AgroSense ECS Fargate — Infrastructure Setup"
@@ -294,7 +303,7 @@ TG_ARN=$(aws elbv2 create-target-group \
     --protocol HTTP --port 8000 \
     --vpc-id "${VPC_ID}" \
     --target-type ip \
-    --health-check-path "/health" \
+    --health-check-path "${API_HEALTH_CHECK_PATH}" \
     --health-check-interval-seconds 30 \
     --healthy-threshold-count 2 \
     --unhealthy-threshold-count 3 \
@@ -302,11 +311,68 @@ TG_ARN=$(aws elbv2 create-target-group \
     aws elbv2 describe-target-groups --names "${PROJECT_NAME}-api-tg" \
     --region "${AWS_REGION}" --query 'TargetGroups[0].TargetGroupArn' --output text)
 
-aws elbv2 create-listener \
-    --load-balancer-arn "${ALB_ARN}" \
-    --protocol HTTP --port 80 \
-    --default-actions Type=forward,TargetGroupArn="${TG_ARN}" \
-    --region "${AWS_REGION}" 2>/dev/null || true
+# El target group puede existir de una ejecución anterior con otra ruta: alinearla.
+aws elbv2 modify-target-group \
+    --target-group-arn "${TG_ARN}" \
+    --health-check-path "${API_HEALTH_CHECK_PATH}" \
+    --region "${AWS_REGION}" >/dev/null
+
+# Listeners: HTTPS 443 con certificado ACM (TLS 1.2+/1.3) y redirección HTTP 80 -> 443.
+# Sin ACM_CERTIFICATE_ARN se mantiene sólo HTTP:80 con advertencia explícita.
+listener_arn_for_port() {
+    aws elbv2 describe-listeners \
+        --load-balancer-arn "${ALB_ARN}" \
+        --region "${AWS_REGION}" \
+        --query "Listeners[?Port==\`$1\`].ListenerArn | [0]" \
+        --output text 2>/dev/null || echo "None"
+}
+
+HTTP_LISTENER_ARN=$(listener_arn_for_port 80)
+if [ -n "${ACM_CERTIFICATE_ARN}" ]; then
+    HTTPS_LISTENER_ARN=$(listener_arn_for_port 443)
+    if [ -z "${HTTPS_LISTENER_ARN}" ] || [ "${HTTPS_LISTENER_ARN}" = "None" ]; then
+        aws elbv2 create-listener \
+            --load-balancer-arn "${ALB_ARN}" \
+            --protocol HTTPS --port 443 \
+            --certificates CertificateArn="${ACM_CERTIFICATE_ARN}" \
+            --ssl-policy "${ALB_SSL_POLICY}" \
+            --default-actions Type=forward,TargetGroupArn="${TG_ARN}" \
+            --region "${AWS_REGION}" >/dev/null
+    else
+        aws elbv2 modify-listener \
+            --listener-arn "${HTTPS_LISTENER_ARN}" \
+            --certificates CertificateArn="${ACM_CERTIFICATE_ARN}" \
+            --ssl-policy "${ALB_SSL_POLICY}" \
+            --default-actions Type=forward,TargetGroupArn="${TG_ARN}" \
+            --region "${AWS_REGION}" >/dev/null
+    fi
+
+    REDIRECT_ACTION='Type=redirect,RedirectConfig={Protocol=HTTPS,Port=443,StatusCode=HTTP_301}'
+    if [ -z "${HTTP_LISTENER_ARN}" ] || [ "${HTTP_LISTENER_ARN}" = "None" ]; then
+        aws elbv2 create-listener \
+            --load-balancer-arn "${ALB_ARN}" \
+            --protocol HTTP --port 80 \
+            --default-actions "${REDIRECT_ACTION}" \
+            --region "${AWS_REGION}" >/dev/null
+    else
+        aws elbv2 modify-listener \
+            --listener-arn "${HTTP_LISTENER_ARN}" \
+            --default-actions "${REDIRECT_ACTION}" \
+            --region "${AWS_REGION}" >/dev/null
+    fi
+    echo "  ↳ ALB: HTTPS:443 (${ALB_SSL_POLICY}) activo y HTTP:80 redirige a HTTPS."
+else
+    echo "  ⚠️  WARNING: ACM_CERTIFICATE_ARN no está definido. El ALB queda SOLO con HTTP:80"
+    echo "     (tráfico y tokens JWT sin cifrar). Solicita/valida un certificado en ACM"
+    echo "     (${AWS_REGION}) y vuelve a ejecutar con ACM_CERTIFICATE_ARN=arn:aws:acm:..."
+    if [ -z "${HTTP_LISTENER_ARN}" ] || [ "${HTTP_LISTENER_ARN}" = "None" ]; then
+        aws elbv2 create-listener \
+            --load-balancer-arn "${ALB_ARN}" \
+            --protocol HTTP --port 80 \
+            --default-actions Type=forward,TargetGroupArn="${TG_ARN}" \
+            --region "${AWS_REGION}" >/dev/null
+    fi
+fi
 
 # Registrar Auto-Scaling para ECS Fargate (CPU 70% y Memoria 75% - SCRUM-140)
 aws application-autoscaling register-scalable-target \
@@ -372,9 +438,11 @@ echo "[7/7] Creando secretos en AWS Secrets Manager..."
 declare -A SECRETS=(
     ["agrosense/prod/database-url"]="postgresql+asyncpg://USER:PASS@HOST:5432/agrosense_db"
     ["agrosense/prod/database-url-sync"]="postgresql+psycopg://USER:PASS@HOST:5432/agrosense_db"
-    ["agrosense/prod/rabbitmq-url"]="amqp://USER:PASS@HOST:5672/"
+    ["agrosense/prod/rabbitmq-url"]="amqp://USER:PASS@HOST:5672/%2Fagrosense"
     ["agrosense/prod/jwt-secret"]="CHANGE_ME_GENERATE_SECURE_KEY"
     ["agrosense/prod/buyer-jwt-secret"]="CHANGE_ME_GENERATE_SECURE_KEY"
+    ["agrosense/prod/auth-username"]="admin@agrosense.example"
+    ["agrosense/prod/auth-password-hash"]="CHANGE_ME_ARGON2_HASH_FROM_agrosense_api.cli_hash-secret"
     ["agrosense/prod/s3-bucket"]="agrosense-datalake-prod"
     ["agrosense/prod/s3-bucket-raw"]="${S3_RAW_BUCKET}"
     ["agrosense/prod/s3-bucket-trusted"]="${S3_TRUSTED_BUCKET}"
@@ -384,6 +452,12 @@ declare -A SECRETS=(
     ["agrosense/prod/postgres-db"]="agrosense_db"
     ["agrosense/prod/rabbitmq-user"]="agrosense_mq"
     ["agrosense/prod/rabbitmq-password"]="CHANGE_ME_GENERATE_SECURE_PASSWORD"
+    # Airflow: secretos propios (no reutilizar jwt-secret ni la BD de la aplicación)
+    ["agrosense/prod/airflow-database-url"]="postgresql+psycopg2://USER:PASS@HOST:5432/airflow_db"
+    ["agrosense/prod/airflow-fernet-key"]="CHANGE_ME_GENERATE_WITH_Fernet.generate_key"
+    ["agrosense/prod/airflow-api-secret"]="CHANGE_ME_GENERATE_SECURE_KEY"
+    ["agrosense/prod/airflow-admin-user"]="admin"
+    ["agrosense/prod/airflow-admin-password"]="CHANGE_ME_GENERATE_SECURE_PASSWORD"
 )
 
 for secret_name in "${!SECRETS[@]}"; do
@@ -418,7 +492,10 @@ echo ""
 echo " SIGUIENTES PASOS:"
 echo "  1. Actualiza los secretos en AWS Secrets Manager con valores reales"
 echo "  2. Configura los GitHub Secrets (ver .github/workflows/deploy-ecs.yml)"
-echo "  3. Haz push a la rama 'main' para disparar el despliegue automático"
+echo "  3. Merge a 'main' despliega a staging; un tag vX.Y.Z sobre main despliega a producción"
+if [ -z "${ACM_CERTIFICATE_ARN}" ]; then
+    echo "  4. ⚠️  Sin HTTPS: re-ejecuta con ACM_CERTIFICATE_ARN para habilitar 443 y redirección"
+fi
 echo ""
 echo " VALORES PARA GITHUB SECRETS:"
 echo "  AWS_ACCOUNT_ID  = $(aws sts get-caller-identity --query Account --output text)"

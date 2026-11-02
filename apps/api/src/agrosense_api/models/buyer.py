@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String, text
+from sqlalchemy import Boolean, ForeignKey, String, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -33,6 +33,18 @@ class InternationalBuyer(BaseModel):
     buyer_name: Mapped[str] = mapped_column(
         String(150),
         nullable=False,
+    )
+    # Hash Argon2 del API key del comprador (RNF-06). Nullable para mantener compatibilidad
+    # con el seed: un comprador sin api_key_hash no puede autenticarse.
+    api_key_hash: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
     )
 
     # Relaciones
