@@ -35,12 +35,15 @@ update() {
     return
   fi
   printf '%s' "${value//@${OLD_HOST}:5432\//@${NEW_HOST}:5432/}" > "$tmp"
+  # En Git Bash (Windows) aws.exe no entiende /tmp/...: se convierte a ruta de Windows.
+  local path="$tmp"
+  if command -v cygpath > /dev/null 2>&1; then path="$(cygpath -m "$tmp")"; fi
   if [[ "$stage" == "AWSCURRENT" ]]; then
     aws secretsmanager put-secret-value --region "$AWS_REGION" --secret-id "$name" \
-      --secret-string "file://$tmp" > /dev/null
+      --secret-string "file://$path" > /dev/null
   else
     aws secretsmanager put-secret-value --region "$AWS_REGION" --secret-id "$name" \
-      --secret-string "file://$tmp" --version-stages "$stage" > /dev/null
+      --secret-string "file://$path" --version-stages "$stage" > /dev/null
   fi
   echo "  $name [$stage]: $OLD_HOST -> $NEW_HOST"
 }
