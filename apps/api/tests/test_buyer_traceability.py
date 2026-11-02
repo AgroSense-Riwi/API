@@ -19,6 +19,7 @@ from agrosense_api.script import app
 from agrosense_api.services.traceability import (
     TraceabilityForbiddenError,
     TraceabilityNotFoundError,
+    get_batch_trace,
 )
 from fastapi.testclient import TestClient
 
@@ -223,3 +224,21 @@ def test_traceability_sets_rls_buyer_context(
     assert response.status_code == 200
     set_context.assert_awaited_once()
     assert set_context.await_args.args[1] == buyer_id
+
+
+@pytest.mark.anyio
+async def test_get_batch_trace_hidden_by_rls_but_existing_is_forbidden() -> None:
+    """CA-09: si RLS oculta el lote pero existe (export_batch_exists = true) -> 403."""
+    session = AsyncMock()
+    session.scalar.side_effect = [None, True]
+    with pytest.raises(TraceabilityForbiddenError):
+        await get_batch_trace(session, "LOTE-OTRO-002", uuid.uuid4())
+    assert session.scalar.await_count == 2
+
+
+@pytest.mark.anyio
+async def test_get_batch_trace_missing_batch_is_not_found() -> None:
+    session = AsyncMock()
+    session.scalar.side_effect = [None, False]
+    with pytest.raises(TraceabilityNotFoundError):
+        await get_batch_trace(session, "LOTE-INEXISTENTE", uuid.uuid4())

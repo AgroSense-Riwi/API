@@ -15,6 +15,7 @@ base no esta disponible o no esta migrada.
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -90,8 +91,7 @@ def rls_engine() -> Iterator[Engine]:
         conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE}"))
         conn.execute(
             text(
-                "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public "
-                f"TO {APP_ROLE}"
+                f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {APP_ROLE}"
             )
         )
     yield engine
@@ -99,14 +99,16 @@ def rls_engine() -> Iterator[Engine]:
 
 
 @pytest.fixture
-def two_buyers(rls_engine: Engine) -> Iterator[dict[str, UUID]]:
-    ids = {
+def two_buyers(rls_engine: Engine) -> Iterator[dict[str, Any]]:
+    ids: dict[str, Any] = {
         "buyer_a": uuid4(),
         "buyer_b": uuid4(),
         "batch_a": uuid4(),
         "batch_b": uuid4(),
     }
     suffix = uuid4().hex[:8]
+    ids["code_a"] = f"RLS-LOT-a-{suffix}"
+    ids["code_b"] = f"RLS-LOT-b-{suffix}"
     with rls_engine.begin() as conn:
         # Ruta de operador: funciona aunque el usuario de pruebas no sea superusuario.
         conn.execute(text("SELECT set_config('app.current_role', 'operator', true)"))
@@ -257,5 +259,37 @@ async def test_api_service_uses_set_local_buyer_context(rls_engine: Engine, two_
             assert await get_buyer_batches(session, two_buyers["buyer_b"]) == []
             own = await get_buyer_batches(session, two_buyers["buyer_a"])
             assert [b.batch_id for b in own] == [two_buyers["batch_a"]]
+    finally:
+        await async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_ca09_foreign_batch_is_forbidden_not_not_found(
+    rls_engine: Engine, two_buyers
+) -> None:
+    """CA-09: bajo RLS, el lote de otro comprador da 403 (Forbidden) y uno inexistente 404."""
+    from agrosense_api.db.session import set_buyer_context
+    from agrosense_api.services.traceability import (
+        TraceabilityForbiddenError,
+        TraceabilityNotFoundError,
+        get_batch_trace,
+    )
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+    async_engine = create_async_engine(MIGRATED_DB_URL)
+    try:
+        async with AsyncSession(async_engine) as session:
+            await session.execute(text(f"SET LOCAL ROLE {APP_ROLE}"))
+            await set_buyer_context(session, two_buyers["buyer_a"])
+            with pytest.raises(TraceabilityForbiddenError):
+                await get_batch_trace(session, two_buyers["code_b"], two_buyers["buyer_a"])
+            with pytest.raises(TraceabilityNotFoundError):
+                await get_batch_trace(session, f"NO-EXISTE-{uuid4().hex}", two_buyers["buyer_a"])
+            # La función no altera el contexto: el lote B sigue invisible para el comprador A.
+            leaked = await session.scalar(
+                text("SELECT count(*) FROM export_batches WHERE batch_id = :b"),
+                {"b": two_buyers["batch_b"]},
+            )
+            assert leaked == 0
     finally:
         await async_engine.dispose()
