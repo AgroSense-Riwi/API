@@ -16,6 +16,7 @@ from agrosense_api.schemas.traceability import (
     TraceabilityResponse,
 )
 from agrosense_api.script import app
+from agrosense_api.services.buyer_audit import record_buyer_api_access
 from agrosense_api.services.traceability import (
     TraceabilityForbiddenError,
     TraceabilityNotFoundError,
@@ -33,6 +34,16 @@ def setup_buyer_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def audit_mock() -> AsyncMock:
+    """Evita escribir en buyer_api_audit_logs desde los tests de endpoint (sin BD)."""
+    with patch(
+        "agrosense_api.api.v1.endpoints.traceability.record_buyer_api_access",
+        new=AsyncMock(),
+    ) as mock:
+        yield mock
 
 
 @pytest.fixture
@@ -242,3 +253,116 @@ async def test_get_batch_trace_missing_batch_is_not_found() -> None:
     session.scalar.side_effect = [None, False]
     with pytest.raises(TraceabilityNotFoundError):
         await get_batch_trace(session, "LOTE-INEXISTENTE", uuid.uuid4())
+
+
+def _trace_response() -> TraceabilityResponse:
+    return TraceabilityResponse(
+        batch_id=uuid.uuid4(),
+        batch_code="LOTE-EXP-001",
+        total_weight_kg=Decimal("1500.00"),
+        traced_weight_kg=Decimal("1500.00"),
+        is_exportable=True,
+        is_certified=True,
+        weighted_water_m3_ton=Decimal("3.45"),
+        buyer_id=uuid.uuid4(),
+        buyer_name="Nordic Roasters",
+        created_at=datetime.now(UTC),
+        compositions=[],
+        cupping_evaluations=[],
+    )
+
+
+@pytest.mark.parametrize(
+    ("side_effect", "expected_status", "audited"),
+    [
+        (None, 200, True),
+        (TraceabilityForbiddenError("forbidden"), 403, True),
+        (TraceabilityNotFoundError("missing"), 404, False),
+    ],
+    ids=["ok-audited", "forbidden-audited-ca09", "not-found-not-audited"],
+)
+def test_read_traceability_writes_audit_log(
+    client: TestClient,
+    buyer_token: str,
+    audit_mock: AsyncMock,
+    side_effect: Exception | None,
+    expected_status: int,
+    audited: bool,
+) -> None:
+    """CA-09 / RNF-05: los 200 y 403 se auditan con código HTTP y latencia; el 404 no."""
+    with patch(
+        "agrosense_api.api.v1.endpoints.traceability.get_batch_trace",
+        new=AsyncMock(side_effect=side_effect, return_value=_trace_response()),
+    ):
+        response = client.get(
+            "/api/v1/traceability/LOTE-EXP-001",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+        )
+    assert response.status_code == expected_status
+    if not audited:
+        audit_mock.assert_not_awaited()
+        return
+    audit_mock.assert_awaited_once()
+    kwargs = audit_mock.await_args.kwargs
+    assert kwargs["batch_code"] == "LOTE-EXP-001"
+    assert kwargs["http_status_code"] == expected_status
+    assert kwargs["latency_ms"] >= 0
+    assert kwargs["requested_at"].tzinfo is not None
+
+
+class _PgDialect:
+    name = "postgresql"
+
+
+class _PgBind:
+    dialect = _PgDialect()
+
+
+def _pg_session() -> AsyncMock:
+    session = AsyncMock()
+    session.get_bind = lambda: _PgBind()
+    return session
+
+
+@pytest.mark.anyio
+async def test_record_buyer_api_access_commits_on_postgres() -> None:
+    session = _pg_session()
+    await record_buyer_api_access(
+        session,
+        batch_code="LOTE-OTRO-002",
+        http_status_code=403,
+        latency_ms=12.345,
+        requested_at=datetime.now(UTC),
+    )
+    session.execute.assert_awaited_once()
+    session.commit.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_record_buyer_api_access_skips_unaudited_status() -> None:
+    session = _pg_session()
+    await record_buyer_api_access(
+        session,
+        batch_code="LOTE-INEXISTENTE",
+        http_status_code=404,
+        latency_ms=1.0,
+        requested_at=datetime.now(UTC),
+    )
+    session.execute.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_record_buyer_api_access_failure_does_not_raise() -> None:
+    from sqlalchemy.exc import SQLAlchemyError
+
+    session = _pg_session()
+    session.execute.side_effect = SQLAlchemyError("boom")
+    await record_buyer_api_access(
+        session,
+        batch_code="LOTE-EXP-001",
+        http_status_code=200,
+        latency_ms=1.0,
+        requested_at=datetime.now(UTC),
+    )
+    session.commit.assert_not_awaited()
+    session.rollback.assert_awaited_once()

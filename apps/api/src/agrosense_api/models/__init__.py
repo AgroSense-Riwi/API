@@ -1,3 +1,4 @@
+from .audit import BuyerApiAuditLog
 from .base import Base, BaseModel, TimestampMixin
 from .batch import BatchFarmComposition, ExportBatch
 from .buyer import BuyerBatchContract, InternationalBuyer
@@ -25,4 +26,5 @@ __all__ = [
     "CuppingEvaluation",
     "InternationalBuyer",
     "BuyerBatchContract",
+    "BuyerApiAuditLog",
 ]
