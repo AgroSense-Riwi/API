@@ -1,0 +1,250 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  AgroSense Cafe - Servidor PostgreSQL + PostGIS en EC2 (ADR-001). Subred privada,
+  sin puertos de administracion abiertos (acceso por SSM Session Manager), disco
+  cifrado, IMDSv2 y llave SSH guardada por AWS en Parameter Store.
+
+# Despliegue (us-east-2):
+#   aws cloudformation deploy --region us-east-2 --stack-name agrosense-db-ec2 \
+#     --template-file infra/aws/cloudformation-db-ec2.yaml \
+#     --capabilities CAPABILITY_NAMED_IAM \
+#     --parameter-overrides SubnetId=<subred-privada> DbSecurityGroupId=<agrosense-db-sg> \
+#                           AppSecretVersionStage=AWSCURRENT
+#
+# Descargar la llave privada (.pem) que CloudFormation genero:
+#   aws ssm get-parameter --region us-east-2 --with-decryption \
+#     --name /ec2/keypair/<KeyPairId> --query Parameter.Value --output text > agrosense-db-ec2-key.pem
+#
+# Entrar sin SSH ni puertos abiertos:
+#   aws ssm start-session --region us-east-2 --target <InstanceId>
+#
+# Secretos que lee el arranque (deben existir antes de desplegar):
+#   <SecretsPrefix>/postgres-user, postgres-password, postgres-db  -> rol dueno de las tablas
+#   <SecretsPrefix>/database-url (etapa AppSecretVersionStage)     -> contrasena de agrosense_app
+# Las contrasenas nunca aparecen en el user-data ni en el log.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: agrosense
+  EnvironmentName:
+    Type: String
+    Default: production
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subred PRIVADA (con NAT) donde vive la base de datos.
+  DbSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group agrosense-db-sg (5432 solo desde agrosense-api-sg).
+  PrivateIpAddress:
+    Type: String
+    Default: 10.0.3.10
+    Description: IP privada fija; es el host de las cadenas de conexion en Secrets Manager.
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: Rango que pg_hba.conf acepta (el security group restringe aun mas).
+  InstanceType:
+    Type: String
+    Default: t3.micro
+  VolumeSize:
+    Type: Number
+    Default: 20
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/canonical/ubuntu/server/26.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+  SecretsPrefix:
+    Type: String
+    Default: agrosense/prod
+  AppSecretVersionStage:
+    Type: String
+    Default: AWSCURRENT
+    Description: Etapa de <SecretsPrefix>/database-url que contiene la URL de agrosense_app.
+
+Resources:
+  DbKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Sub "${ProjectName}-db-ec2-key"
+      KeyType: ed25519
+      Tags:
+        - Key: Project
+          Value: AgroSense-Cafe
+        - Key: ManagedBy
+          Value: IaC
+
+  DbInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-db-ec2-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: read-db-bootstrap-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/postgres-*"
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/database-url-??????"
+      Tags:
+        - Key: Project
+          Value: AgroSense-Cafe
+
+  DbInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${ProjectName}-db-ec2-profile"
+      Roles:
+        - !Ref DbInstanceRole
+
+  DbLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${ProjectName}-db-ec2"
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref DbKeyPair
+        DisableApiTermination: true
+        IamInstanceProfile:
+          Arn: !GetAtt DbInstanceProfile.Arn
+        MetadataOptions:
+          HttpTokens: required
+          HttpEndpoint: enabled
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: !Ref VolumeSize
+              VolumeType: gp3
+              Encrypted: true
+              DeleteOnTermination: false
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            SubnetId: !Ref SubnetId
+            PrivateIpAddress: !Ref PrivateIpAddress
+            AssociatePublicIpAddress: false
+            Groups:
+              - !Ref DbSecurityGroupId
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub "${ProjectName}-db-server"
+              - Key: Project
+                Value: AgroSense-Cafe
+              - Key: Environment
+                Value: !Ref EnvironmentName
+              - Key: ManagedBy
+                Value: IaC
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value: !Sub "${ProjectName}-db-data"
+              - Key: Project
+                Value: AgroSense-Cafe
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            # Arranque unico: PostgreSQL + PostGIS, rol dueno, agrosense_app (RLS), airflow_db.
+            set -euo pipefail
+            M=AGROSENSE-DB-BOOTSTRAP
+            trap 'echo "$M FAILED at line $LINENO"' ERR
+            DONE=/var/lib/agrosense-db-bootstrap.done
+            if [ -f "$DONE" ]; then echo "$M already done"; exit 0; fi
+            echo "$M start"
+
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -y -q
+            apt-get install -y -q postgresql postgresql-contrib postgis unzip curl python3
+            curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip
+            unzip -q -o /tmp/awscliv2.zip -d /tmp
+            /tmp/aws/install --update
+            echo "$M packages ok"
+
+            sec() { /usr/local/bin/aws secretsmanager get-secret-value --region ${AWS::Region} \
+                      --secret-id "${SecretsPrefix}/$1" --version-stage "$2" --query SecretString --output text; }
+            export OWNER="$(sec postgres-user AWSCURRENT)"
+            export OWNER_PW="$(sec postgres-password AWSCURRENT)"
+            export DB_NAME="$(sec postgres-db AWSCURRENT)"
+            export APP_PW="$(sec database-url ${AppSecretVersionStage} | python3 -c '
+            import sys, urllib.parse as u
+            p = u.urlsplit(sys.stdin.read().strip())
+            assert p.username == "agrosense_app", "database-url no usa agrosense_app"
+            print(u.unquote(p.password))')"
+            echo "$M secrets ok (owner=$OWNER db=$DB_NAME)"
+
+            PGVER="$(ls /etc/postgresql | sort -V | tail -1)"
+            CONF="/etc/postgresql/$PGVER/main"
+            printf "listen_addresses = '*'\npassword_encryption = 'scram-sha-256'\n" > "$CONF/conf.d/agrosense.conf"
+            grep -q "${VpcCidr}" "$CONF/pg_hba.conf" || \
+              echo "host    all    all    ${VpcCidr}    scram-sha-256" >> "$CONF/pg_hba.conf"
+            systemctl enable postgresql
+            systemctl restart postgresql
+            until sudo -u postgres pg_isready -q; do sleep 2; done
+            echo "$M postgres $PGVER listening"
+
+            # runuser conserva el entorno (sudo-rs de Ubuntu 26.04 ignora "sudo -E").
+            runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -d postgres <<'SQL'
+            \getenv owner OWNER
+            \getenv owner_pw OWNER_PW
+            \getenv db DB_NAME
+            \getenv app_pw APP_PW
+            SELECT format('CREATE ROLE %I LOGIN', :'owner')
+              WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'owner') \gexec
+            -- Dueno de las tablas: no superusuario, BYPASSRLS para Alembic y el seed con FORCE RLS.
+            ALTER ROLE :"owner" WITH LOGIN NOSUPERUSER CREATEDB BYPASSRLS PASSWORD :'owner_pw';
+            SELECT format('CREATE DATABASE %I OWNER %I', :'db', :'owner')
+              WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'db') \gexec
+            SELECT format('CREATE DATABASE airflow_db OWNER %I', :'owner')
+              WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'airflow_db') \gexec
+            -- Rol de la API (igual que infra/aws/ec2-postgres-app-role.sql): respeta RLS.
+            SELECT 'CREATE ROLE agrosense_app LOGIN'
+              WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'agrosense_app') \gexec
+            ALTER ROLE agrosense_app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS PASSWORD :'app_pw';
+            GRANT CONNECT ON DATABASE :"db" TO agrosense_app;
+            \c :"db"
+            CREATE EXTENSION IF NOT EXISTS postgis;
+            ALTER SCHEMA public OWNER TO :"owner";
+            GRANT USAGE ON SCHEMA public TO agrosense_app;
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO agrosense_app;
+            GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO agrosense_app;
+            ALTER DEFAULT PRIVILEGES FOR ROLE :"owner" IN SCHEMA public
+                GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO agrosense_app;
+            ALTER DEFAULT PRIVILEGES FOR ROLE :"owner" IN SCHEMA public
+                GRANT USAGE, SELECT ON SEQUENCES TO agrosense_app;
+            SELECT rolname, rolsuper, rolbypassrls FROM pg_roles
+              WHERE rolname IN (:'owner', 'agrosense_app');
+            SQL
+            unset OWNER_PW APP_PW
+            touch "$DONE"
+            echo "$M done OK"
+
+  DbInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref DbLaunchTemplate
+        Version: !GetAtt DbLaunchTemplate.LatestVersionNumber
+
+Outputs:
+  InstanceId:
+    Value: !Ref DbInstance
+  PrivateIp:
+    Description: Host de las cadenas de conexion (database-url, database-url-sync, airflow-database-url).
+    Value: !GetAtt DbInstance.PrivateIp
+  KeyPairId:
+    Value: !GetAtt DbKeyPair.KeyPairId
+  DownloadPemCommand:
+    Value: !Sub "aws ssm get-parameter --region ${AWS::Region} --with-decryption --name /ec2/keypair/${DbKeyPair.KeyPairId} --query Parameter.Value --output text > ${ProjectName}-db-ec2-key.pem"
+  SessionCommand:
+    Value: !Sub "aws ssm start-session --region ${AWS::Region} --target ${DbInstance}"

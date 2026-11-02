@@ -93,7 +93,10 @@ its own contracts and a session without that variable sees none. Internal code t
 every row must authenticate an operator and use `get_operator_db(...)`, which sets
 `SET LOCAL app.current_role = 'operator'`. The application role `agrosense_app` must not own
 the tables nor have `BYPASSRLS`; Docker creates it in
-`infra/docker/postgres/init/02-create-app-role.sh` and the EC2 server needs
+`infra/docker/postgres/init/02-create-app-role.sh`. On AWS the EC2 server is created by
+`infra/aws/cloudformation-db-ec2.yaml` (stack `agrosense-db-ec2`, private IP `10.0.3.10`,
+access through SSM Session Manager, key pair stored in Parameter Store), whose first boot
+creates both roles, PostGIS and `airflow_db`. For a server created by hand, run
 `infra/aws/ec2-postgres-app-role.sql` once.
 
 ## Certification rules (RN-08 / RN-09)
