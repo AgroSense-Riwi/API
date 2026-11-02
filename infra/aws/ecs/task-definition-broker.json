@@ -10,8 +10,11 @@
       "name": "rabbitmq-data",
       "efsVolumeConfiguration": {
         "fileSystemId": "${EFS_FILE_SYSTEM_ID}",
-        "rootDirectory": "/rabbitmq-data",
-        "transitEncryption": "ENABLED"
+        "transitEncryption": "ENABLED",
+        "authorizationConfig": {
+          "accessPointId": "${EFS_BROKER_ACCESS_POINT_ID}",
+          "iam": "DISABLED"
+        }
       }
     }
   ],
@@ -55,7 +58,8 @@
         }
       ],
       "environment": [
-        { "name": "RABBITMQ_DEFAULT_VHOST", "value": "/agrosense" }
+        { "name": "RABBITMQ_DEFAULT_VHOST", "value": "/agrosense" },
+        { "name": "RABBITMQ_NODENAME", "value": "rabbit@localhost" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
