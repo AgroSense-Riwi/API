@@ -291,5 +291,9 @@ async def test_ca09_foreign_batch_is_forbidden_not_not_found(
                 {"b": two_buyers["batch_b"]},
             )
             assert leaked == 0
+            role_after = await session.scalar(
+                text("SELECT coalesce(current_setting('app.current_role', true), '')")
+            )
+            assert role_after != "operator"
     finally:
         await async_engine.dispose()
