@@ -1,4 +1,3 @@
-@'
 # --- Secretos (NUNCA al repo) ---
 .env
 .env.*
@@ -57,4 +56,7 @@ derby.log
 .DS_Store
 Thumbs.db
 *.log
-'@ | Set-Content -Path .gitignore -Encoding utf8
+
+# --- Artefactos temporales de despliegue (exponen account id / ARNs) ---
+task-def-temp.json
+task-def-*.tmp.json

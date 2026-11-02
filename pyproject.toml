@@ -1,0 +1,43 @@
+[project]
+name = "agrosense"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.142.2",
+    "slowapi>=0.1.10",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[tool.uv.workspace]
+members = ["apps/*"]
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "pytest",
+    "pytest-cov",
+    "pre-commit",
+    "faker>=40.43.0",
+    "requests>=2.34.2",
+    "boto3>=1.43.117",
+    "requests-mock>=1.12.1",
+    "pyarrow>=26.0.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]   # S = reglas de seguridad (bandit)
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101", "S603", "S607", "S608"]  # assert, subprocess y SQL de fixtures en pruebas
+"apps/api/migrations/**" = ["S608"]            # DDL estático de Alembic construido con constantes del módulo
+"scripts/seed/**" = ["S311"]                   # PRNG estándar requerido para simulación determinista (no criptográfica)
+"apps/simulators/**" = ["S311"]               # PRNG para simulación de telemetría IoT física
+
+[tool.pytest.ini_options]
+testpaths = ["apps", "tests"]
+pythonpath = [".", "apps/api/src", "apps/simulators/src"]
+addopts = "--cov=apps --cov=scripts --cov-report=term-missing"

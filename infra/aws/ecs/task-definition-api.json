@@ -1,0 +1,107 @@
+{
+  "family": "agrosense-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/rol_1_ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/rol_2_agrosense-api-task-role",
+  "containerDefinitions": [
+    {
+      "name": "agrosense-api",
+      "image": "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/agrosense-api:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health/live || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "environment": [
+        { "name": "SKIP_MIGRATIONS", "value": "false" },
+        { "name": "AGROSENSE_ALLOWED_ORIGINS", "value": "[\"https://your-frontend-domain.com\"]" },
+        { "name": "AWS_DEFAULT_REGION", "value": "${AWS_REGION}" }
+      ],
+      "secrets": [
+        {
+          "name": "AGROSENSE_DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/database-url-lXljxM"
+        },
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/database-url-sync-iLOr6K"
+        },
+        {
+          "name": "AGROSENSE_RABBITMQ_URL",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/rabbitmq-url-skA1ZA"
+        },
+        {
+          "name": "AGROSENSE_JWT_SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/jwt-secret-AJUt1i"
+        },
+        {
+          "name": "AGROSENSE_BUYER_JWT_SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/buyer-jwt-secret-yT4Uk2"
+        },
+        {
+          "name": "AGROSENSE_AUTH_USERNAME",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/auth-username"
+        },
+        {
+          "name": "AGROSENSE_AUTH_PASSWORD_HASH",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/auth-password-hash"
+        },
+        {
+          "name": "S3_BUCKET",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/s3-bucket-LXXZkV"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/agrosense-api",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "api",
+          "awslogs-create-group": "true"
+        }
+      }
+    },
+    {
+      "name": "agrosense-telemetry-consumer",
+      "image": "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/agrosense-api:latest",
+      "essential": false,
+      "command": ["python", "-m", "agrosense_api.workers.telemetry_consumer"],
+      "dependsOn": [
+        {
+          "containerName": "agrosense-api",
+          "condition": "START"
+        }
+      ],
+      "environment": [
+        { "name": "SKIP_MIGRATIONS", "value": "true" }
+      ],
+      "secrets": [
+        {
+          "name": "AGROSENSE_RABBITMQ_URL",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/rabbitmq-url-skA1ZA"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/agrosense-api",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "telemetry-consumer",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

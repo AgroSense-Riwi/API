@@ -1,0 +1,363 @@
+# ==============================================================================
+# AgroSense Café — CI/CD Pipeline: CI → Build → Push ECR → Deploy ECS Fargate
+# ==============================================================================
+# Flujo de releases (getting-started/git_workflow.md §4):
+#   - push/merge a 'main'            -> entorno GitHub "staging"
+#   - tag de release vX.Y.Z en main  -> entorno GitHub "production"
+#   - workflow_dispatch              -> staging (desde main) o production (desde un tag vX.Y.Z)
+# 'dev' NUNCA despliega. No existe forma de saltarse CI ni el escaneo de secretos.
+#
+# Secretos (definirlos por entorno GitHub "staging" / "production"):
+#   AWS_ROLE_ARN            - (recomendado) rol IAM asumido vía OIDC; si está definido NO se
+#                             usan llaves estáticas
+#   AWS_ACCESS_KEY_ID       - (fallback) sólo si AWS_ROLE_ARN no está definido
+#   AWS_SECRET_ACCESS_KEY   - (fallback) sólo si AWS_ROLE_ARN no está definido
+#   AWS_ACCOUNT_ID          - ID de cuenta de AWS (12 dígitos)
+#   AWS_REGION              - Región (us-east-2 por defecto)
+#   ECS_CLUSTER             - Nombre del cluster ECS
+#   ECS_SERVICE_API         - Nombre del servicio ECS de la API
+#   SUBNET_1 / SUBNET_2     - Subnets privadas (sólo para crear el servicio)
+#   API_SG                  - Security Group de la API (sólo para crear el servicio)
+#   ALB_TG_ARN              - (opcional) ARN del Target Group; si falta se busca por nombre
+# Variables (vars) opcionales: ALB_TG_NAME (default agrosense-api-tg), API_PUBLIC_URL.
+# ==============================================================================
+
+name: Deploy to ECS Fargate
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Entorno destino (production exige ejecutar desde un tag vX.Y.Z de main)"
+        type: choice
+        options: [staging, production]
+        default: staging
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # OIDC (aws-actions/configure-aws-credentials con role-to-assume)
+  contents: read
+
+env:
+  ECR_REPOSITORY: agrosense-api
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  # ─── Job 0: Resolver y validar el entorno destino ──────────────────────────
+  target:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.resolve.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          if [ "${REF_TYPE}" = "tag" ]; then
+            ENVIRONMENT=production
+          elif [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            ENVIRONMENT="${INPUT_ENVIRONMENT}"
+          else
+            ENVIRONMENT=staging
+          fi
+
+          if [ "${ENVIRONMENT}" = "production" ]; then
+            if [ "${REF_TYPE}" != "tag" ] || [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+              echo "::error::Producción sólo se despliega desde un tag de release vX.Y.Z."
+              exit 1
+            fi
+            git fetch --no-tags origin main
+            if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+              echo "::error::El tag ${GITHUB_REF_NAME} no apunta a un commit de main."
+              exit 1
+            fi
+          elif [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "::error::Staging sólo se despliega desde main (ref actual: ${GITHUB_REF})."
+            exit 1
+          fi
+          echo "Entorno destino: ${ENVIRONMENT}"
+          echo "environment=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
+
+  # ─── Job 1: Calidad + tests + gitleaks (reutiliza ci.yml, sin bypass) ──────
+  ci:
+    needs: [target]
+    uses: ./.github/workflows/ci.yml
+
+  # ─── Job 2: Build Docker image → Push a ECR ──────────────────────────────
+  build-and-push:
+    needs: [target, ci]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.target.outputs.environment }}
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-2' }}
+    outputs:
+      image_uri: ${{ steps.build.outputs.image_uri }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS (OIDC si AWS_ROLE_ARN existe; si no, llaves)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: agrosense-build-${{ github.run_id }}
+          aws-access-key-id: ${{ secrets.AWS_ROLE_ARN == '' && secrets.AWS_ACCESS_KEY_ID || '' }}
+          aws-secret-access-key: ${{ secrets.AWS_ROLE_ARN == '' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+
+      - name: Login a Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build y Push de imagen Docker
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          IMAGE_LATEST="${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
+
+          echo "Building image: ${IMAGE_URI}"
+
+          docker build \
+            -f apps/api/Dockerfile \
+            -t "${IMAGE_URI}" \
+            -t "${IMAGE_LATEST}" \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --cache-from "${IMAGE_LATEST}" \
+            .
+
+          docker push "${IMAGE_URI}"
+          docker push "${IMAGE_LATEST}"
+
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+          echo "✅ Image pushed: ${IMAGE_URI}"
+
+  # ─── Job 3: Deploy a ECS Fargate ─────────────────────────────────────────
+  deploy:
+    needs: [target, build-and-push]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.target.outputs.environment }}
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-2' }}
+      ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      CLUSTER: ${{ secrets.ECS_CLUSTER }}
+      SERVICE: ${{ secrets.ECS_SERVICE_API }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS (OIDC si AWS_ROLE_ARN existe; si no, llaves)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: agrosense-deploy-${{ github.run_id }}
+          aws-access-key-id: ${{ secrets.AWS_ROLE_ARN == '' && secrets.AWS_ACCESS_KEY_ID || '' }}
+          aws-secret-access-key: ${{ secrets.AWS_ROLE_ARN == '' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+
+      - name: Preparar Task Definition
+        id: task-def
+        env:
+          IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
+        run: |
+          set -euo pipefail
+          echo "Using IMAGE_URI: ${IMAGE_URI}"
+
+          # Asegurar que el Log Group de CloudWatch exista para evitar AccessDenied en logs:CreateLogGroup
+          aws logs create-log-group --log-group-name "/ecs/agrosense-api" --region "${AWS_REGION}" 2>/dev/null || true
+
+          # Reemplazar variables base en el JSON
+          sed -e "s|\${AWS_ACCOUNT_ID}|${ACCOUNT_ID}|g" \
+              -e "s|\${AWS_REGION}|${AWS_REGION}|g" \
+              infra/aws/ecs/task-definition-api.json > /tmp/task-def-resolved.json
+
+          # Resolver ARNs canónicos de Secrets Manager (sufijo aleatorio de 6 caracteres) de
+          # TODOS los contenedores (API + consumidor de telemetría).
+          mapfile -t VALUE_FROMS < <(jq -r '[.containerDefinitions[].secrets[]?.valueFrom] | unique[]' /tmp/task-def-resolved.json)
+          for VALUE_FROM in "${VALUE_FROMS[@]}"; do
+            SECRET_NAME=$(echo "${VALUE_FROM}" | sed -E 's/.*:secret:([^:]+).*/\1/')
+            REAL_ARN=$(aws secretsmanager describe-secret --secret-id "${SECRET_NAME}" --region "${AWS_REGION}" --query ARN --output text 2>/dev/null || echo "")
+            if [ -n "${REAL_ARN}" ] && [ "${REAL_ARN}" != "None" ]; then
+              echo "ARN resuelto para ${SECRET_NAME}: ${REAL_ARN}"
+              jq --arg old "${VALUE_FROM}" --arg new "${REAL_ARN}" \
+                '(.containerDefinitions[].secrets[]? | select(.valueFrom == $old) | .valueFrom) |= $new' \
+                /tmp/task-def-resolved.json > /tmp/task-def-tmp.json && mv /tmp/task-def-tmp.json /tmp/task-def-resolved.json
+            elif [[ "${VALUE_FROM}" =~ -[A-Za-z0-9]{6}$ ]]; then
+              echo "Manteniendo ARN completo existente: ${VALUE_FROM}"
+            else
+              echo "::error::El secreto ${SECRET_NAME} no existe en Secrets Manager (${AWS_REGION}); créalo antes de desplegar."
+              exit 1
+            fi
+          done
+
+          # La imagen recién construida se usa en todos los contenedores basados en agrosense-api.
+          jq --arg img "${IMAGE_URI}" \
+             '(.containerDefinitions[] | select(.image | test("/agrosense-api:")) | .image) |= $img' \
+             /tmp/task-def-resolved.json > /tmp/task-def-api.json
+
+          echo "Task definition verificada:"
+          jq '[.containerDefinitions[] | {name, image, secrets: [.secrets[]?.name]}]' /tmp/task-def-api.json
+
+      - name: Registrar Task Definition en ECS
+        id: register-task
+        run: |
+          TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/task-def-api.json \
+            --region "${AWS_REGION}" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "task_def_arn=${TASK_DEF_ARN}" >> "$GITHUB_OUTPUT"
+          echo "✅ Task Definition registrada: ${TASK_DEF_ARN}"
+
+      - name: Crear o actualizar ECS Service
+        env:
+          TASK_DEF_ARN: ${{ steps.register-task.outputs.task_def_arn }}
+          ALB_TG_ARN: ${{ secrets.ALB_TG_ARN }}
+          ALB_TG_NAME: ${{ vars.ALB_TG_NAME || 'agrosense-api-tg' }}
+          SUBNET_1: ${{ secrets.SUBNET_1 }}
+          SUBNET_2: ${{ secrets.SUBNET_2 }}
+          API_SG: ${{ secrets.API_SG }}
+        run: |
+          set -euo pipefail
+          # Verificar si el servicio ya existe
+          SERVICE_EXISTS=$(aws ecs describe-services \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}" \
+            --region "${AWS_REGION}" \
+            --query 'services[?status==`ACTIVE`].serviceName' \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "${SERVICE_EXISTS}" ]; then
+            echo "Actualizando servicio existente..."
+            aws ecs update-service \
+              --cluster "${CLUSTER}" \
+              --service "${SERVICE}" \
+              --task-definition "${TASK_DEF_ARN}" \
+              --force-new-deployment \
+              --region "${AWS_REGION}" \
+              --query 'service.serviceName' \
+              --output text
+          else
+            TG_ARN="${ALB_TG_ARN}"
+            if [ -z "${TG_ARN}" ]; then
+              TG_ARN=$(aws elbv2 describe-target-groups \
+                --names "${ALB_TG_NAME}" \
+                --region "${AWS_REGION}" \
+                --query 'TargetGroups[0].TargetGroupArn' \
+                --output text)
+            fi
+            echo "Creando nuevo servicio ECS (target group: ${TG_ARN})..."
+            aws ecs create-service \
+              --cluster "${CLUSTER}" \
+              --service-name "${SERVICE}" \
+              --task-definition "${TASK_DEF_ARN}" \
+              --desired-count 1 \
+              --launch-type FARGATE \
+              --deployment-configuration "minimumHealthyPercent=50,maximumPercent=200" \
+              --load-balancers "targetGroupArn=${TG_ARN},containerName=agrosense-api,containerPort=8000" \
+              --network-configuration "awsvpcConfiguration={subnets=[${SUBNET_1},${SUBNET_2}],securityGroups=[${API_SG}],assignPublicIp=DISABLED}" \
+              --region "${AWS_REGION}" \
+              --query 'service.serviceName' \
+              --output text
+          fi
+
+          echo "✅ Servicio ECS desplegado."
+
+      - name: Esperar estabilización del servicio
+        run: |
+          echo "Esperando a que el servicio se estabilice (máx 10 min)..."
+          aws ecs wait services-stable \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}" \
+            --region "${AWS_REGION}"
+          echo "✅ Servicio estabilizado y operativo."
+
+      - name: Diagnóstico detallado en caso de fallo en ECS
+        if: failure()
+        run: |
+          echo "::error::El servicio ECS no se estabilizó. Mostrando eventos y razones de fallo..."
+          echo "=== Últimos 15 eventos del servicio ECS ==="
+          aws ecs describe-services \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}" \
+            --region "${AWS_REGION}" \
+            --query "services[0].events[0:15].[createdAt,message]" \
+            --output table || true
+
+          echo "=== Tareas detenidas recientemente y causas de salida ==="
+          STOPPED_TASKS=$(aws ecs list-tasks \
+            --cluster "${CLUSTER}" \
+            --service-name "${SERVICE}" \
+            --desired-status STOPPED \
+            --region "${AWS_REGION}" \
+            --query "taskArns[0:5]" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "${STOPPED_TASKS}" ] && [ "${STOPPED_TASKS}" != "None" ]; then
+            # Proyección plana por contenedor (una lista anidada con --output table falla con
+            # "Row should have 1 elements").
+            aws ecs describe-tasks \
+              --cluster "${CLUSTER}" \
+              --tasks ${STOPPED_TASKS} \
+              --region "${AWS_REGION}" \
+              --query "tasks[].{Task:taskArn,StopCode:stopCode,StoppedReason:stoppedReason}" \
+              --output table || true
+            aws ecs describe-tasks \
+              --cluster "${CLUSTER}" \
+              --tasks ${STOPPED_TASKS} \
+              --region "${AWS_REGION}" \
+              --query "tasks[].containers[].{Container:name,ExitCode:exitCode,Reason:reason}" \
+              --output table || true
+          fi
+
+      - name: Verificar Health Check
+        run: |
+          RUNNING=$(aws ecs describe-services \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}" \
+            --region "${AWS_REGION}" \
+            --query 'services[0].runningCount' \
+            --output text)
+
+          DESIRED=$(aws ecs describe-services \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}" \
+            --region "${AWS_REGION}" \
+            --query 'services[0].desiredCount' \
+            --output text)
+
+          echo "Running: ${RUNNING} / Desired: ${DESIRED}"
+
+          if [ "${RUNNING}" -eq "${DESIRED}" ]; then
+            echo "✅ Despliegue exitoso. ${RUNNING} tasks corriendo."
+          else
+            echo "⚠️ Despliegue parcial: ${RUNNING}/${DESIRED} tasks activas."
+            exit 1
+          fi
+
+      - name: Resumen del despliegue
+        if: success()
+        env:
+          ENVIRONMENT: ${{ needs.target.outputs.environment }}
+          IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
+          API_PUBLIC_URL: ${{ vars.API_PUBLIC_URL }}
+        run: |
+          echo "✅ AgroSense API desplegada en ECS Fargate"
+          echo "  Entorno:  ${ENVIRONMENT}"
+          echo "  Cluster:  ${CLUSTER}"
+          echo "  Service:  ${SERVICE}"
+          echo "  URL:      ${API_PUBLIC_URL:-<definir vars.API_PUBLIC_URL>}"
+          echo "  Image:    ${IMAGE_URI}"
+          echo "  Commit:   ${GITHUB_SHA}"
