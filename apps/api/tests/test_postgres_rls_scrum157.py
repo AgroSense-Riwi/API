@@ -140,6 +140,10 @@ def two_buyers(rls_engine: Engine) -> Iterator[dict[str, Any]]:
         batch_ids = [ids["batch_a"], ids["batch_b"]]
         buyer_ids = [ids["buyer_a"], ids["buyer_b"]]
         conn.execute(
+            text("DELETE FROM buyer_api_audit_logs WHERE buyer_id = ANY(:ids)"),
+            {"ids": buyer_ids},
+        )
+        conn.execute(
             text("DELETE FROM buyer_batch_contracts WHERE batch_id = ANY(:ids)"),
             {"ids": batch_ids},
         )
@@ -297,3 +301,69 @@ async def test_ca09_foreign_batch_is_forbidden_not_not_found(
             assert role_after != "operator"
     finally:
         await async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_ca09_forbidden_request_is_written_to_audit_log(
+    rls_engine: Engine, two_buyers
+) -> None:
+    """CA-09: el 403 sobre el lote ajeno queda en buyer_api_audit_logs y se confirma."""
+    from datetime import UTC, datetime
+
+    from agrosense_api.db.session import set_buyer_context
+    from agrosense_api.services.buyer_audit import record_buyer_api_access
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+    async_engine = create_async_engine(MIGRATED_DB_URL)
+    try:
+        async with AsyncSession(async_engine) as session:
+            await session.execute(text(f"SET LOCAL ROLE {APP_ROLE}"))
+            await set_buyer_context(session, two_buyers["buyer_a"])
+            await record_buyer_api_access(
+                session,
+                batch_code=two_buyers["code_b"],
+                http_status_code=403,
+                latency_ms=7.5,
+                requested_at=datetime.now(UTC),
+            )
+    finally:
+        await async_engine.dispose()
+
+    with rls_engine.begin() as conn:
+        conn.execute(text("SELECT set_config('app.current_role', 'operator', true)"))
+        rows = conn.execute(
+            text(
+                "SELECT batch_id, http_status_code, latency_ms "
+                "FROM buyer_api_audit_logs WHERE buyer_id = :b"
+            ),
+            {"b": two_buyers["buyer_a"]},
+        ).all()
+    assert len(rows) == 1
+    assert rows[0].batch_id == two_buyers["batch_b"]
+    assert rows[0].http_status_code == 403
+    assert float(rows[0].latency_ms) == 7.5
+
+    # El comprador A ve su fila de auditoría; el comprador B no.
+    with rls_engine.connect() as conn, conn.begin():
+        _as_app_role(conn, buyer_id=two_buyers["buyer_a"])
+        own = conn.execute(text("SELECT count(*) FROM buyer_api_audit_logs")).scalar()
+    with rls_engine.connect() as conn, conn.begin():
+        _as_app_role(conn, buyer_id=two_buyers["buyer_b"])
+        other = conn.execute(text("SELECT count(*) FROM buyer_api_audit_logs")).scalar()
+    assert own >= 1
+    assert other == 0
+
+
+def test_buyer_cannot_insert_audit_rows_directly(rls_engine: Engine, two_buyers) -> None:
+    """Un comprador no puede escribir en la auditoría salvo vía log_buyer_api_access."""
+    with rls_engine.connect() as conn, conn.begin():
+        _as_app_role(conn, buyer_id=two_buyers["buyer_a"])
+        with pytest.raises(DBAPIError):
+            conn.execute(
+                text(
+                    "INSERT INTO buyer_api_audit_logs "
+                    "(buyer_id, http_status_code, latency_ms, requested_at) "
+                    "VALUES (:b, 200, 1, now())"
+                ),
+                {"b": two_buyers["buyer_b"]},
+            )
