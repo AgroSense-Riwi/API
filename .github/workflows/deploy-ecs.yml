@@ -169,7 +169,9 @@ jobs:
       - name: Preparar Task Definition
         id: task-def
         env:
-          IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
+          # La URI se arma aquí: GitHub descarta el output image_uri del job de build
+          # porque contiene el ID de la cuenta, que es un secreto.
+          IMAGE_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
         run: |
           set -euo pipefail
           echo "Using IMAGE_URI: ${IMAGE_URI}"
@@ -351,7 +353,9 @@ jobs:
         if: success()
         env:
           ENVIRONMENT: ${{ needs.target.outputs.environment }}
-          IMAGE_URI: ${{ needs.build-and-push.outputs.image_uri }}
+          # La URI se arma aquí: GitHub descarta el output image_uri del job de build
+          # porque contiene el ID de la cuenta, que es un secreto.
+          IMAGE_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           API_PUBLIC_URL: ${{ vars.API_PUBLIC_URL }}
         run: |
           echo "✅ AgroSense API desplegada en ECS Fargate"
