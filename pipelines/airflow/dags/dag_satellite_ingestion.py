@@ -169,17 +169,22 @@ DEFAULT_ARGS = {
     "email_on_retry": False,
 }
 
+# Columnas reales de `farms` (migración 927ccb53d091): la tabla no tiene nombre, ni marca de
+# finca piloto, ni estado activo. El nombre se toma del productor (`producers.full_name`).
+# Mientras `iot_sensors` siga planeada no hay forma de distinguir las 300 fincas piloto con
+# sensores, así que se consultan todas las fincas con coordenadas.
 PILOT_FARMS_QUERY = """
 SELECT
-    farm_id::text,
-    farm_code,
-    name,
-    latitude::float,
-    longitude::float
-FROM farms
-WHERE is_pilot_sensor_farm = TRUE
-  AND is_active = TRUE
-ORDER BY farm_code ASC;
+    f.farm_id::text,
+    f.farm_code,
+    p.full_name,
+    f.latitude::float8,
+    f.longitude::float8
+FROM farms f
+JOIN producers p ON p.producer_id = f.producer_id
+WHERE f.latitude IS NOT NULL
+  AND f.longitude IS NOT NULL
+ORDER BY f.farm_code ASC;
 """
 
 
@@ -188,12 +193,14 @@ ORDER BY farm_code ASC;
 # ==============================================================================
 @task(task_id="fetch_pilot_farm_coordinates")
 def fetch_pilot_farm_coordinates(**context: Any) -> list[dict[str, Any]]:
-    """Task 1: Extraer coordenadas de las fincas piloto activas desde PostgreSQL.
+    """Task 1: Extraer coordenadas de las fincas desde PostgreSQL (`PILOT_FARMS_QUERY`).
 
-    Consulta la tabla `farms` filtrando por `is_pilot_sensor_farm = TRUE` y `is_active = TRUE`.
-    Si la base de datos no está disponible (e.g. en entorno de test/CI local),
-    emplea un generador sintético determinista de 300 fincas piloto dentro del
-    Eje Cafetero de Colombia.
+    Orden de fuentes:
+    1. Conexión Airflow `postgres_default` (si existe).
+    2. `DATABASE_URL`. Si está definida y la consulta falla, la tarea falla: no se
+       sustituyen las fincas reales por sintéticas en silencio.
+    3. Sin ninguna base configurada (tests / CI local): 300 fincas sintéticas
+       deterministas en el Eje Cafetero.
     """
     logger.info("Iniciando consulta de coordenadas de fincas piloto activas...")
     farms_list: list[dict[str, Any]] = []
@@ -245,7 +252,9 @@ def fetch_pilot_farm_coordinates(**context: Any) -> list[dict[str, Any]]:
                 "Recuperadas %d fincas piloto vía conexión directa PostgreSQL.", len(farms_list)
             )
         except Exception as exc:
-            logger.warning("Conexión directa PostgreSQL no disponible (%s).", exc)
+            raise RuntimeError(f"No se pudieron leer las fincas con DATABASE_URL: {exc}") from exc
+        if not farms_list:
+            raise RuntimeError("La tabla farms no tiene fincas con coordenadas.")
 
     # 3. Fallback determinista: 300 fincas piloto en la zona cafetera colombiana
     if not farms_list:
