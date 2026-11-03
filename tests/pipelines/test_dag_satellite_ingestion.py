@@ -19,6 +19,7 @@ import tempfile
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
+import pytest
 import requests_mock
 
 # Ensure pipelines and plugins are in sys.path
@@ -94,11 +95,45 @@ class TestPilotFarmCoordinates:
     """Validate retrieval and filtering of the 300 pilot farms."""
 
     def test_sql_query_structure(self) -> None:
-        """SQL query must target active pilot sensor farms."""
-        assert "is_pilot_sensor_farm = TRUE" in PILOT_FARMS_QUERY
-        assert "is_active = TRUE" in PILOT_FARMS_QUERY
-        assert "latitude" in PILOT_FARMS_QUERY
-        assert "longitude" in PILOT_FARMS_QUERY
+        """SQL query uses only columns that exist in farms / producers."""
+        for missing in ("is_pilot_sensor_farm", "is_active", " name,"):
+            assert missing not in PILOT_FARMS_QUERY
+        assert "JOIN producers p ON p.producer_id = f.producer_id" in PILOT_FARMS_QUERY
+        assert "f.latitude" in PILOT_FARMS_QUERY
+        assert "f.longitude" in PILOT_FARMS_QUERY
+
+    def test_query_runs_on_migrated_schema(self) -> None:
+        """The query must run against the Alembic schema (TEST_MIGRATED_DATABASE_URL)."""
+        url = os.getenv("TEST_MIGRATED_DATABASE_URL")
+        if not url:
+            pytest.skip("TEST_MIGRATED_DATABASE_URL no configurada.")
+        import psycopg
+
+        dsn = url.replace("+psycopg", "")
+        try:
+            conn = psycopg.connect(dsn, connect_timeout=5)
+        except Exception as exc:  # pragma: no cover - depende del entorno
+            pytest.skip(f"PostgreSQL no disponible: {exc}")
+        with conn, conn.cursor() as cursor:
+            if cursor.execute("SELECT to_regclass('public.farms')").fetchone()[0] is None:
+                pytest.skip("La base de pruebas no esta migrada.")
+            cursor.execute(PILOT_FARMS_QUERY)
+            assert [c.name for c in cursor.description] == [
+                "farm_id",
+                "farm_code",
+                "full_name",
+                "latitude",
+                "longitude",
+            ]
+
+    def test_fetch_fails_when_database_url_query_fails(self) -> None:
+        """With DATABASE_URL set, a failing query must fail the task (no silent fallback)."""
+        with patch("psycopg.connect", side_effect=RuntimeError("column does not exist")):
+            with patch.dict(
+                os.environ, {"DATABASE_URL": "postgresql://test:test@localhost:5432/test"}
+            ):
+                with pytest.raises(RuntimeError, match="DATABASE_URL"):
+                    fetch_pilot_farm_coordinates()
 
     def test_fetch_pilot_farms_deterministic_fallback(self) -> None:
         """Without active DB connection, deterministic fallback must yield 300 pilot farms."""

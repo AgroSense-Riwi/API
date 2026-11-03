@@ -15,12 +15,13 @@
 #   - servicio ECS agrosense-airflow con DESIRED_COUNT=0 (apagado)
 #
 # Con RUN_GOLD_DAG=1 ejecuta además una tarea única que corre
-#   airflow db migrate && airflow dags test dag_gold_star_schema
+#   airflow db migrate && airflow dags test $TEST_DAG_ID (por defecto dag_gold_star_schema)
 # (requiere la EC2 de PostgreSQL encendida y la imagen ya publicada en ECR).
 #
 # Uso:
 #   ./infra/aws/setup-airflow.sh
 #   RUN_GOLD_DAG=1 ./infra/aws/setup-airflow.sh
+#   RUN_GOLD_DAG=1 TEST_DAG_ID=dag_satellite_ingestion ./infra/aws/setup-airflow.sh
 #
 # Encender la UI/scheduler:  aws ecs update-service --cluster agrosense-cluster --service agrosense-airflow --desired-count 1
 # Apagar:                    aws ecs update-service --cluster agrosense-cluster --service agrosense-airflow --desired-count 0
@@ -39,6 +40,7 @@ GLUE_DATABASE="${GLUE_DATABASE:-agrosense_datalake}"
 ATHENA_WORKGROUP="${ATHENA_WORKGROUP:-primary}"
 DESIRED_COUNT="${DESIRED_COUNT:-0}"
 RUN_GOLD_DAG="${RUN_GOLD_DAG:-0}"
+TEST_DAG_ID="${TEST_DAG_ID:-dag_gold_star_schema}"
 TAGS_KV=(Project=AgroSense-Cafe Environment=production ManagedBy=IaC Owner=Keinerdmb)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -182,9 +184,10 @@ if [[ "$RUN_GOLD_DAG" != "1" ]]; then
   exit 0
 fi
 
-echo "[8/8] Tarea única: airflow dags test dag_gold_star_schema..."
-cat > "$WORK/overrides.json" <<'JSON'
-{"containerOverrides":[{"name":"airflow-standalone-scheduler","command":["bash","-c","airflow db migrate >/dev/null && airflow dags test dag_gold_star_schema"]}]}
+echo "[8/8] Tarea única: airflow dags test ${TEST_DAG_ID}..."
+[[ "$TEST_DAG_ID" =~ ^[A-Za-z0-9_]+$ ]] || { echo "TEST_DAG_ID inválido"; exit 1; }
+cat > "$WORK/overrides.json" <<JSON
+{"containerOverrides":[{"name":"airflow-standalone-scheduler","command":["bash","-c","airflow db migrate >/dev/null && airflow dags test ${TEST_DAG_ID}"]}]}
 JSON
 TASK_ARN="$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$TASKDEF_ARN" \
   --launch-type FARGATE --network-configuration "$NETWORK" \
