@@ -147,6 +147,15 @@ sed -e "s|\${AWS_ACCOUNT_ID}|${AWS_ACCOUNT_ID}|g" \
     -e "s|\${AWS_REGION}|${AWS_REGION}|g" \
     -e "s|\${AIRFLOW_IMAGE}|${IMAGE_URI}|g" \
     "$TASKDEF_TEMPLATE" > "$WORK/taskdef.json"
+# ARN completo (con sufijo aleatorio) de cada secreto: con un ARN parcial, Secrets Manager
+# toma un nombre terminado en "-" + 6 caracteres (p. ej. airflow-api-secret) como sufijo y
+# la tarea falla con ResourceNotFoundException. describe-secret no lee el valor.
+for name in $(grep -o "secret:${SECRET_PREFIX}/[A-Za-z0-9_-]*\"" "$WORK/taskdef.json" \
+    | sed -e 's/^secret://' -e 's/"$//' | sort -u); do
+  arn="$(aws secretsmanager describe-secret --secret-id "$name" --query ARN --output text)"
+  sed -i "s|arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:${name}\"|${arn}\"|g" \
+    "$WORK/taskdef.json"
+done
 TASKDEF_ARN="$(aws ecs register-task-definition --cli-input-json "file://$(winpath "$WORK/taskdef.json")" \
   --tags $(ecs_tags) --query taskDefinition.taskDefinitionArn --output text)"
 echo "  $TASKDEF_ARN"
