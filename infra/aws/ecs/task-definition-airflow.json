@@ -37,6 +37,7 @@
         },
         { "name": "SPARK_MASTER", "value": "local[2]" },
         { "name": "S3_BUCKET_GOLD", "value": "datalakeagrosense" },
+        { "name": "S3_BRONZE_PREFIX", "value": "raw/" },
         { "name": "AWS_DEFAULT_REGION", "value": "${AWS_REGION}" }
       ],
       "secrets": [

@@ -355,6 +355,22 @@ class TestS3BronzeWriterAndIdempotency:
         assert nasa_key == "weather_nasa_power/dt=2026-10-01/nasa_power_2026-10-01.json"
         assert meteo_key == "weather_open_meteo/dt=2026-10-01/open_meteo_2026-10-01.json"
 
+    @pytest.mark.parametrize("prefix", ["raw/", "raw", "/raw/"])
+    def test_s3_partition_keys_with_layer_prefix(
+        self, monkeypatch: pytest.MonkeyPatch, prefix: str
+    ) -> None:
+        """S3_BRONZE_PREFIX places bronze files under the Medallion raw/ layer."""
+        monkeypatch.setenv("S3_BRONZE_PREFIX", prefix)
+        ds = "2026-10-01"
+        assert (
+            S3BronzeWriter.get_nasa_power_s3_key(ds)
+            == "raw/weather_nasa_power/dt=2026-10-01/nasa_power_2026-10-01.json"
+        )
+        assert (
+            S3BronzeWriter.get_open_meteo_s3_key(ds)
+            == "raw/weather_open_meteo/dt=2026-10-01/open_meteo_2026-10-01.json"
+        )
+
     def test_idempotent_write_overwrite(self) -> None:
         """Writing to the same partition twice overwrites atomically without corrupting data."""
         writer = S3BronzeWriter(bucket_name="test-agrosense-bronze")
