@@ -1,0 +1,78 @@
+# ==============================================================================
+# AgroSense Café — Imagen de Apache Airflow + PySpark → Amazon ECR (agrosense-airflow)
+# ==============================================================================
+# Construye infra/docker/airflow/Dockerfile (contexto pipelines/), comprueba que los
+# DAGs se importan sin errores y que PySpark arranca una SparkSession, y publica
+# :<sha> y :latest. La task definition agrosense-airflow usa :latest
+# (infra/aws/setup-airflow.sh). No enciende ningún servicio.
+#
+# Secretos del entorno GitHub "staging": AWS_ROLE_ARN (OIDC) o
+# AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, y AWS_REGION (opcional).
+# ==============================================================================
+name: Build Airflow image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pipelines/**"
+      - "infra/docker/airflow/**"
+      - ".github/workflows/build-airflow-image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: build-airflow-image
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ECR_REPOSITORY: agrosense-airflow
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  build-and-push:
+    needs: [ci]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-2' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build de la imagen
+        run: |
+          docker build -f infra/docker/airflow/Dockerfile -t agrosense-airflow:ci pipelines
+
+      - name: Smoke test (DAGs sin errores de importación + SparkSession local)
+        run: |
+          docker run --rm -v "${PWD}/infra/docker/airflow/smoke_test.py:/tmp/smoke_test.py:ro" --entrypoint python agrosense-airflow:ci /tmp/smoke_test.py
+
+      - name: Configurar credenciales AWS (OIDC si AWS_ROLE_ARN existe; si no, llaves)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: agrosense-airflow-build-${{ github.run_id }}
+          aws-access-key-id: ${{ secrets.AWS_ROLE_ARN == '' && secrets.AWS_ACCESS_KEY_ID || '' }}
+          aws-secret-access-key: ${{ secrets.AWS_ROLE_ARN == '' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+
+      - name: Login a Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push a ECR
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          for tag in "${IMAGE_TAG}" latest; do
+            docker tag agrosense-airflow:ci "${ECR_REGISTRY}/${ECR_REPOSITORY}:${tag}"
+            docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:${tag}"
+          done
+          echo "### Imagen publicada: \`${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}\`" >> "$GITHUB_STEP_SUMMARY"
