@@ -34,6 +34,10 @@ class InternationalBuyer(BaseModel):
         String(150),
         nullable=False,
     )
+    country: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+    )
     # Hash Argon2 del API key del comprador (RNF-06). Nullable para mantener compatibilidad
     # con el seed: un comprador sin api_key_hash no puede autenticarse.
     api_key_hash: Mapped[str | None] = mapped_column(

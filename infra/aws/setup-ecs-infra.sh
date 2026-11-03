@@ -273,7 +273,7 @@ aws ec2 create-vpc-endpoint \
 
 aws ec2 create-tags \
     --resources "${VPC_ID}" "${PUB_SUBNET_1}" "${PUB_SUBNET_2}" "${PRIV_SUBNET_1}" "${PRIV_SUBNET_2}" "${ALB_SG}" "${API_SG}" "${DB_SG}" "${BROKER_SG}" "${EFS_SG}" "${NAT_GW_ID}" "${PUB_RT}" "${PRIV_RT}" \
-    --tags Key=Project,Value=AgroSense-Cafe Key=Environment,Value=production Key=ManagedBy,Value=IaC Key=Epic,Value=EP-03 \
+    --tags Key=proyecto,Value=AgroSense-Cafe Key=ambiente,Value=production Key=responsable,Value=AgroSense-Team Key=Project,Value=AgroSense-Cafe Key=Environment,Value=production Key=ManagedBy,Value=IaC Key=Epic,Value=EP-03 \
     --region "${AWS_REGION}" 2>/dev/null || true
 
 # ─── 6. ECS Cluster, ALB & Auto-Scaling (AGRO-13 / SCRUM-138 / SCRUM-140) ────
@@ -285,7 +285,7 @@ aws ecs create-cluster \
     --capacity-providers FARGATE \
     --default-capacity-provider-strategy capacityProvider=FARGATE,weight=1 \
     --setting name=containerInsights,value=enabled \
-    --tags key=Project,value=AgroSense-Cafe key=Environment,value=production key=ManagedBy,value=IaC \
+    --tags key=proyecto,value=AgroSense-Cafe key=ambiente,value=production key=responsable,value=AgroSense-Team key=Project,value=AgroSense-Cafe key=Environment,value=production key=ManagedBy,value=IaC \
     --region "${AWS_REGION}" 2>/dev/null || echo "  ↳ Cluster ya existe."
 
 ALB_ARN=$(aws elbv2 create-load-balancer \

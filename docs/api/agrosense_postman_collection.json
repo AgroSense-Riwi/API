@@ -1,0 +1,135 @@
+{
+  "info": {
+    "_postman_id": "9f8e7d6c-5b4a-4321-8765-123456789abc",
+    "name": "AgroSense Caf\u00e9 \u2014 Commercial Traceability & IoT API (v1)",
+    "description": "Official Postman/Bruno collection for AgroSense Caf\u00e9 REST API (E-05).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "operator_jwt",
+      "value": ""
+    },
+    {
+      "key": "buyer_jwt",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Readiness",
+      "item": [
+        {
+          "name": "GET /health (Readiness DB + RabbitMQ)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health"
+          }
+        },
+        {
+          "name": "GET /health/live (ALB/ECS Liveness)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health/live"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Authentication (OAuth2 / JWT)",
+      "item": [
+        {
+          "name": "POST /api/v1/auth/token (Operator Login)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "admin@agrosense.co"
+                },
+                {
+                  "key": "password",
+                  "value": "<OPERATOR_PASSWORD>"
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/v1/auth/token"
+          }
+        },
+        {
+          "name": "POST /api/v1/auth/buyer-token (International Buyer API Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"BUY-INT-001\",\n  \"api_key\": \"<BUYER_API_KEY>\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/buyer-token"
+          }
+        }
+      ]
+    },
+    {
+      "name": "IoT Telemetry Ingestion (RF-01 / RN-01)",
+      "item": [
+        {
+          "name": "POST /api/v1/telemetry (Publish Sensor Reading)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_jwt}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"farm_id\": \"7060dc2f-48eb-5db4-9a7d-47ac1b4b4ae9\",\n  \"sensor_id\": \"SEN-FIN-0001-SM\",\n  \"metric\": \"soil_moisture\",\n  \"value\": 34.5,\n  \"unit\": \"%\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/telemetry"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Commercial Traceability & Buyer Isolation (RN-08..RN-11 / CA-09)",
+      "item": [
+        {
+          "name": "GET /api/v1/traceability/batches/EXP-2026-0001",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{buyer_jwt}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/traceability/batches/EXP-2026-0001"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -73,3 +73,104 @@ TBLPROPERTIES (
   'parquet.compression'='SNAPPY',
   'classification'='parquet'
 );
+
+-- ============================================================================
+-- GOLD STAR SCHEMA & 6 BUSINESS QUESTIONS ANALYTICAL TABLES (E-11 / CT-10)
+-- ============================================================================
+
+CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.fact_visitas_agronomicas (
+  visit_id STRING,
+  farm_id STRING,
+  farm_code STRING,
+  municipality_name STRING,
+  department_name STRING,
+  agronomist_id STRING,
+  visit_date STRING,
+  visit_quarter STRING,
+  days_since_prev_visit INT,
+  alert_id STRING,
+  alert_type STRING,
+  alert_response_hours DOUBLE,
+  recommendation_status STRING,
+  fertilizer_applied BOOLEAN,
+  yield_kg_ha_before DOUBLE,
+  yield_kg_ha_after DOUBLE,
+  yield_delta_pct DOUBLE,
+  notes STRING
+)
+STORED AS PARQUET
+LOCATION 's3://datalakeagrosense/gold/fact_visitas_agronomicas/'
+TBLPROPERTIES ('parquet.compression'='SNAPPY', 'classification'='parquet');
+
+CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.fact_iot_vs_satelite (
+  comparison_id STRING,
+  farm_id STRING,
+  farm_code STRING,
+  municipality_name STRING,
+  department_name STRING,
+  altitude_meters INT,
+  observation_month STRING,
+  has_pilot_sensors BOOLEAN,
+  iot_temp_mean_c DOUBLE,
+  nasa_power_temp_mean_c DOUBLE,
+  temp_abs_error_c DOUBLE,
+  iot_humidity_mean_pct DOUBLE,
+  ideam_humidity_mean_pct DOUBLE,
+  humidity_abs_error_pct DOUBLE,
+  iot_soil_moisture_pct DOUBLE,
+  era5_soil_moisture_pct DOUBLE,
+  soil_moisture_abs_error_pct DOUBLE,
+  pearson_r_correlation DOUBLE,
+  microclimate_divergence_flag BOOLEAN
+)
+STORED AS PARQUET
+LOCATION 's3://datalakeagrosense/gold/fact_iot_vs_satelite/'
+TBLPROPERTIES ('parquet.compression'='SNAPPY', 'classification'='parquet');
+
+CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.fact_lotes_exportacion (
+  batch_id STRING,
+  batch_code STRING,
+  buyer_id STRING,
+  buyer_company STRING,
+  destination_country STRING,
+  coffee_variety STRING,
+  harvest_season STRING,
+  export_date STRING,
+  total_weight_kg DOUBLE,
+  traced_weight_kg DOUBLE,
+  contributing_farms_count INT,
+  weighted_water_m3_ton DOUBLE,
+  regional_benchmark_m3_ton DOUBLE,
+  water_saving_pct DOUBLE,
+  cupping_score_sca DOUBLE,
+  fob_price_usd_kg DOUBLE,
+  certification_status STRING,
+  sha256_certificate_hash STRING
+)
+STORED AS PARQUET
+LOCATION 's3://datalakeagrosense/gold/fact_lotes_exportacion/'
+TBLPROPERTIES ('parquet.compression'='SNAPPY', 'classification'='parquet');
+
+CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.dim_sensores_salud (
+  sensor_id STRING,
+  sensor_code STRING,
+  farm_id STRING,
+  farm_code STRING,
+  municipality_name STRING,
+  department_name STRING,
+  sensor_type STRING,
+  model STRING,
+  installed_at STRING,
+  status STRING,
+  battery_mv INT,
+  rssi_dbm INT,
+  expected_readings_30d INT,
+  actual_readings_30d INT,
+  uptime_30d_pct DOUBLE,
+  anomalies_30d_count INT,
+  dominant_anomaly_type STRING,
+  requires_maintenance BOOLEAN
+)
+STORED AS PARQUET
+LOCATION 's3://datalakeagrosense/gold/dim_sensores_salud/'
+TBLPROPERTIES ('parquet.compression'='SNAPPY', 'classification'='parquet');

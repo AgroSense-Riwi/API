@@ -1,0 +1,1528 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AgroSense Caf\u00e9 API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health Check",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Alguna dependencia no responde",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/live": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Liveness Check",
+        "operationId": "liveness_check_health_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LivenessResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/token": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Issue Token",
+        "operationId": "issue_token_api_v1_auth_token_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_issue_token_api_v1_auth_token_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/buyer-token": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Generar token de comprador",
+        "description": "Intercambia las credenciales del comprador (client_id + api_key, RNF-06) por un JWT de corta duraci\u00f3n con alcance traceability:read sobre sus propios lotes.",
+        "operationId": "issue_buyer_token_api_v1_auth_buyer_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuyerTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/telemetry": {
+      "post": {
+        "tags": [
+          "telemetry"
+        ],
+        "summary": "Ingest Telemetry",
+        "operationId": "ingest_telemetry_api_v1_telemetry_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelemetryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetryAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/traceability/batches": {
+      "get": {
+        "tags": [
+          "Compradores"
+        ],
+        "summary": "Listar lotes del comprador",
+        "description": "Consulta todos los lotes de caf\u00e9 asignados contractualmente al comprador autenticado.",
+        "operationId": "list_buyer_batches_api_v1_traceability_batches_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BatchSummaryResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Buyer Batches Api V1 Traceability Batches Get"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BuyerJWT": []
+          }
+        ]
+      }
+    },
+    "/api/v1/traceability/{batch_code}": {
+      "get": {
+        "tags": [
+          "Compradores"
+        ],
+        "summary": "Consultar trazabilidad de un lote",
+        "description": "Consulta comercial de certificado y trazabilidad de un lote de exportaci\u00f3n propio.",
+        "operationId": "read_traceability_api_v1_traceability__batch_code__get",
+        "security": [
+          {
+            "BuyerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batch_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "description": "C\u00f3digo \u00fanico del lote",
+              "title": "Batch Code"
+            },
+            "description": "C\u00f3digo \u00fanico del lote"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceabilityResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/farms": {
+      "get": {
+        "tags": [
+          "Operaciones & Certificaci\u00f3n"
+        ],
+        "summary": "Listar fincas con filtros Query (Tema #1)",
+        "operationId": "list_farms_api_v1_farms_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "municipality_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Filtrar por municipio",
+              "title": "Municipality Id",
+              "type": "integer",
+              "minimum": 1,
+              "nullable": true
+            },
+            "description": "Filtrar por municipio"
+          },
+          {
+            "name": "overlaps_reserve",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Filtrar por superposici\u00f3n con reserva forestal (RN-09)",
+              "title": "Overlaps Reserve",
+              "type": "boolean",
+              "nullable": true
+            },
+            "description": "Filtrar por superposici\u00f3n con reserva forestal (RN-09)"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "description": "M\u00e1ximo de registros",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "M\u00e1ximo de registros"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Desplazamiento de paginaci\u00f3n",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Desplazamiento de paginaci\u00f3n"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FarmSummaryItem"
+                  },
+                  "title": "Response List Farms Api V1 Farms Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/farms/{farm_id}": {
+      "get": {
+        "tags": [
+          "Operaciones & Certificaci\u00f3n"
+        ],
+        "summary": "Consultar detalle de finca por UUID o c\u00f3digo (RNF-03)",
+        "operationId": "get_farm_detail_api_v1_farms__farm_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "farm_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "title": "Farm Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FarmSummaryItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Operaciones & Certificaci\u00f3n"
+        ],
+        "summary": "Actualizar indicadores operativos de finca (PATCH - Tema #1)",
+        "operationId": "update_farm_indicators_api_v1_farms__farm_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "farm_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID de la finca",
+              "title": "Farm Id"
+            },
+            "description": "UUID de la finca"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FarmUpdatePayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FarmSummaryItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lots": {
+      "get": {
+        "tags": [
+          "Operaciones & Certificaci\u00f3n"
+        ],
+        "summary": "Listar lotes de exportaci\u00f3n con filtros Query (Tema #1)",
+        "operationId": "list_lots_api_v1_lots_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "certified_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Filtrar por lotes certificados",
+              "title": "Certified Only",
+              "type": "boolean",
+              "nullable": true
+            },
+            "description": "Filtrar por lotes certificados"
+          },
+          {
+            "name": "exportable_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Filtrar por lotes exportables",
+              "title": "Exportable Only",
+              "type": "boolean",
+              "nullable": true
+            },
+            "description": "Filtrar por lotes exportables"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LotSummaryItem"
+                  },
+                  "title": "Response List Lots Api V1 Lots Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lots/{lot_id}": {
+      "get": {
+        "tags": [
+          "Operaciones & Certificaci\u00f3n"
+        ],
+        "summary": "Consultar lote por UUID o c\u00f3digo (RNF-03)",
+        "operationId": "get_lot_detail_api_v1_lots__lot_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "lot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "title": "Lot Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LotSummaryItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lots/{batch_code}/certification": {
+      "delete": {
+        "tags": [
+          "Operaciones & Certificaci\u00f3n"
+        ],
+        "summary": "Revocar certificaci\u00f3n de lote (DELETE - Tema #1)",
+        "operationId": "revoke_lot_certification_api_v1_lots__batch_code__certification_delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batch_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "title": "Batch Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Revoke Lot Certification Api V1 Lots  Batch Code  Certification Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/certificates/verify": {
+      "post": {
+        "tags": [
+          "Operaciones & Certificaci\u00f3n"
+        ],
+        "summary": "Verificar autenticidad criptogr\u00e1fica SHA-256 de un certificado digital (SCRUM-168 / E-16)",
+        "operationId": "verify_digital_certificate_api_v1_certificates_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Certificate Payload",
+                "description": "JSON del certificado digital"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateVerificationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BatchCompositionItem": {
+        "properties": {
+          "farm_id": {
+            "title": "Farm Id",
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "farm_code": {
+            "title": "Farm Code",
+            "type": "string",
+            "nullable": true
+          },
+          "contributed_kg": {
+            "type": "string",
+            "title": "Contributed Kg"
+          },
+          "share_percentage": {
+            "type": "string",
+            "title": "Share Percentage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contributed_kg",
+          "share_percentage"
+        ],
+        "title": "BatchCompositionItem"
+      },
+      "BatchSummaryResponse": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Batch Id"
+          },
+          "batch_code": {
+            "type": "string",
+            "title": "Batch Code"
+          },
+          "total_weight_kg": {
+            "type": "string",
+            "title": "Total Weight Kg"
+          },
+          "traced_weight_kg": {
+            "type": "string",
+            "title": "Traced Weight Kg"
+          },
+          "is_exportable": {
+            "type": "boolean",
+            "title": "Is Exportable"
+          },
+          "is_certified": {
+            "type": "boolean",
+            "title": "Is Certified"
+          },
+          "weighted_water_m3_ton": {
+            "title": "Weighted Water M3 Ton",
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "batch_code",
+          "total_weight_kg",
+          "traced_weight_kg",
+          "is_exportable",
+          "is_certified",
+          "created_at"
+        ],
+        "title": "BatchSummaryResponse"
+      },
+      "Body_issue_token_api_v1_auth_token_post": {
+        "properties": {
+          "grant_type": {
+            "title": "Grant Type",
+            "type": "string",
+            "pattern": "^password$",
+            "nullable": true
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "title": "Password"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope",
+            "default": ""
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string",
+            "nullable": true
+          },
+          "client_secret": {
+            "format": "password",
+            "title": "Client Secret",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "Body_issue_token_api_v1_auth_token_post"
+      },
+      "BuyerTokenRequest": {
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Client Id",
+            "description": "Identificador p\u00fablico del comprador"
+          },
+          "api_key": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Api Key",
+            "description": "Secreto API emitido al comprador"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client_id",
+          "api_key"
+        ],
+        "title": "BuyerTokenRequest"
+      },
+      "CertificateVerificationResponse": {
+        "properties": {
+          "is_valid": {
+            "type": "boolean",
+            "title": "Is Valid"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "batch_code": {
+            "title": "Batch Code",
+            "type": "string",
+            "nullable": true
+          },
+          "issuer": {
+            "title": "Issuer",
+            "type": "string",
+            "nullable": true
+          },
+          "computed_hash": {
+            "title": "Computed Hash",
+            "type": "string",
+            "nullable": true
+          },
+          "stored_hash": {
+            "title": "Stored Hash",
+            "type": "string",
+            "nullable": true
+          },
+          "message": {
+            "title": "Message",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "is_valid",
+          "status"
+        ],
+        "title": "CertificateVerificationResponse"
+      },
+      "CuppingEvaluationItem": {
+        "properties": {
+          "cupping_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Cupping Id"
+          },
+          "sca_total_score": {
+            "type": "string",
+            "title": "Sca Total Score"
+          },
+          "acidity_score": {
+            "title": "Acidity Score",
+            "type": "string",
+            "nullable": true
+          },
+          "body_score": {
+            "title": "Body Score",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "cupping_id",
+          "sca_total_score"
+        ],
+        "title": "CuppingEvaluationItem"
+      },
+      "FarmSummaryItem": {
+        "properties": {
+          "farm_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Farm Id"
+          },
+          "farm_code": {
+            "type": "string",
+            "title": "Farm Code"
+          },
+          "municipality_id": {
+            "type": "integer",
+            "title": "Municipality Id"
+          },
+          "latitude": {
+            "type": "number",
+            "title": "Latitude"
+          },
+          "longitude": {
+            "type": "number",
+            "title": "Longitude"
+          },
+          "cultivated_area_ha": {
+            "type": "number",
+            "title": "Cultivated Area Ha"
+          },
+          "water_usage_m3_ton": {
+            "title": "Water Usage M3 Ton",
+            "type": "number",
+            "nullable": true
+          },
+          "overlaps_reserve": {
+            "type": "boolean",
+            "title": "Overlaps Reserve",
+            "default": false
+          },
+          "has_pilot_sensors": {
+            "type": "boolean",
+            "title": "Has Pilot Sensors",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "farm_id",
+          "farm_code",
+          "municipality_id",
+          "latitude",
+          "longitude",
+          "cultivated_area_ha"
+        ],
+        "title": "FarmSummaryItem"
+      },
+      "FarmUpdatePayload": {
+        "properties": {
+          "water_usage_m3_ton": {
+            "title": "Water Usage M3 Ton",
+            "type": "number",
+            "maximum": 50.0,
+            "minimum": 0.0,
+            "nullable": true
+          },
+          "has_pilot_sensors": {
+            "title": "Has Pilot Sensors",
+            "type": "boolean",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "FarmUpdatePayload"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "unhealthy"
+            ],
+            "title": "Status"
+          },
+          "database": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "disconnected",
+              "not_configured",
+              "not_checked"
+            ],
+            "title": "Database"
+          },
+          "rabbitmq": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "disconnected",
+              "not_configured",
+              "not_checked"
+            ],
+            "title": "Rabbitmq"
+          },
+          "storage": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "disconnected",
+              "not_configured",
+              "not_checked"
+            ],
+            "title": "Storage",
+            "default": "not_checked"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "database",
+          "rabbitmq"
+        ],
+        "title": "HealthResponse"
+      },
+      "LivenessResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "alive",
+            "enum": [
+              "alive"
+            ]
+          },
+          "service": {
+            "type": "string",
+            "title": "Service",
+            "default": "agrosense-api"
+          }
+        },
+        "type": "object",
+        "title": "LivenessResponse"
+      },
+      "LotSummaryItem": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Batch Id"
+          },
+          "batch_code": {
+            "type": "string",
+            "title": "Batch Code"
+          },
+          "total_weight_kg": {
+            "type": "number",
+            "title": "Total Weight Kg"
+          },
+          "traced_weight_kg": {
+            "type": "number",
+            "title": "Traced Weight Kg"
+          },
+          "is_exportable": {
+            "type": "boolean",
+            "title": "Is Exportable"
+          },
+          "is_certified": {
+            "type": "boolean",
+            "title": "Is Certified"
+          },
+          "weighted_water_m3_ton": {
+            "title": "Weighted Water M3 Ton",
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "batch_code",
+          "total_weight_kg",
+          "traced_weight_kg",
+          "is_exportable",
+          "is_certified"
+        ],
+        "title": "LotSummaryItem"
+      },
+      "TelemetryAccepted": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Event Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "queued",
+            "enum": [
+              "queued"
+            ]
+          }
+        },
+        "type": "object",
+        "title": "TelemetryAccepted"
+      },
+      "TelemetryCreate": {
+        "properties": {
+          "farm_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Farm Id"
+          },
+          "sensor_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Sensor Id"
+          },
+          "metric": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Metric"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "unit": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 1,
+            "title": "Unit"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Observed At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "farm_id",
+          "sensor_id",
+          "metric",
+          "value",
+          "unit"
+        ],
+        "title": "TelemetryCreate"
+      },
+      "TokenResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token"
+        ],
+        "title": "TokenResponse"
+      },
+      "TraceabilityResponse": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Batch Id"
+          },
+          "batch_code": {
+            "type": "string",
+            "title": "Batch Code"
+          },
+          "total_weight_kg": {
+            "type": "string",
+            "title": "Total Weight Kg"
+          },
+          "traced_weight_kg": {
+            "type": "string",
+            "title": "Traced Weight Kg"
+          },
+          "is_exportable": {
+            "type": "boolean",
+            "title": "Is Exportable"
+          },
+          "is_certified": {
+            "type": "boolean",
+            "title": "Is Certified"
+          },
+          "weighted_water_m3_ton": {
+            "title": "Weighted Water M3 Ton",
+            "type": "string",
+            "nullable": true
+          },
+          "buyer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Buyer Id"
+          },
+          "buyer_name": {
+            "type": "string",
+            "title": "Buyer Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "compositions": {
+            "items": {
+              "$ref": "#/components/schemas/BatchCompositionItem"
+            },
+            "type": "array",
+            "title": "Compositions",
+            "default": []
+          },
+          "cupping_evaluations": {
+            "items": {
+              "$ref": "#/components/schemas/CuppingEvaluationItem"
+            },
+            "type": "array",
+            "title": "Cupping Evaluations",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "batch_code",
+          "total_weight_kg",
+          "traced_weight_kg",
+          "is_exportable",
+          "is_certified",
+          "buyer_id",
+          "buyer_name",
+          "created_at"
+        ],
+        "title": "TraceabilityResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "title": "ErrorResponse",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "title": "ErrorDetail",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "title": "Code"
+              },
+              "message": {
+                "type": "string",
+                "title": "Message"
+              },
+              "details": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "title": "Details",
+                "nullable": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {
+              "lots:read": "Read lot traceability and origin composition",
+              "farms:read": "Read farm details and export contribution history",
+              "lots:certify": "Certify export lots"
+            },
+            "tokenUrl": "/api/v1/auth/token"
+          }
+        }
+      },
+      "BuyerJWT": {
+        "type": "http",
+        "description": "JWT for a buyer. It must contain a buyer_id UUID claim and the traceability:read scope.",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Compradores",
+      "description": "Consulta comercial de certificados de los lotes propios."
+    }
+  ]
+}

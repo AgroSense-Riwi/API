@@ -1,0 +1,89 @@
+{
+  "certificate_id": "CERT-EXP-2026-0001-0D47F919",
+  "batch_id": "11d0f394-f514-518c-93d8-81ab114a5c7f",
+  "batch_code": "EXP-2026-0001",
+  "issued_at": "2026-11-03T12:41:30.443690Z",
+  "issuer": "AgroSense Caf\u00e9 Certification Authority",
+  "buyer_id": "c932ebeb-07aa-5230-9b64-088e4bde15e1",
+  "buyer_name": "Nordic Specialty Coffee Traders AS (Oslo, Norway)",
+  "total_weight_kg": 2430.0,
+  "cupping_score": 86.75,
+  "water_footprint": {
+    "direct_irrigation_liters": 3402.0,
+    "satellite_rain_liters": 5540.4,
+    "total_water_liters": 8942.4,
+    "liters_per_kg": 3.68,
+    "m3_per_ton": 3.68
+  },
+  "farms": [
+    {
+      "farm_id": "7060dc2f-48eb-5db4-9a7d-47ac1b4b4ae9",
+      "farm_code": "FIN-0001",
+      "farm_name": "Finca El Mirador del Caf\u00e9 (Pitalito, Huila)",
+      "contributed_kg": "1350.00",
+      "share_percentage": "55.56",
+      "geojson_polygon": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -76.051,
+              1.853
+            ],
+            [
+              -76.049,
+              1.853
+            ],
+            [
+              -76.049,
+              1.855
+            ],
+            [
+              -76.051,
+              1.855
+            ],
+            [
+              -76.051,
+              1.853
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "farm_id": "54ecf9a7-e5a7-5b93-a021-9741b65a1edb",
+      "farm_code": "FIN-0002",
+      "farm_name": "Hacienda La Esperanza (Chinchin\u00e1, Caldas)",
+      "contributed_kg": "1080.00",
+      "share_percentage": "44.44",
+      "geojson_polygon": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -75.605,
+              4.981
+            ],
+            [
+              -75.603,
+              4.981
+            ],
+            [
+              -75.603,
+              4.983
+            ],
+            [
+              -75.605,
+              4.983
+            ],
+            [
+              -75.605,
+              4.981
+            ]
+          ]
+        ]
+      }
+    }
+  ],
+  "certificate_hash": "c332497a8d77e4a51c53c1f21a588d0cb5948a279fb89991f403e46805976c10"
+}

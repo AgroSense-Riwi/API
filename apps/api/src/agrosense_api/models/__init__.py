@@ -7,12 +7,24 @@ from .farm import CoffeeVariety, Farm, FarmPlot, FarmReserveOverlap, ForestReser
 from .harvest import HarvestDelivery
 from .location import Municipality
 from .producer import Producer
+from .telemetry_and_agronomy import (
+    AgronomicAlert,
+    AgronomistFieldVisit,
+    CropNutrientReference,
+    Department,
+    FertilizerRecommendation,
+    IotSensor,
+    SensorAnomalyLog,
+    SensorType,
+    SoilLabAnalysis,
+)
 
 __all__ = [
     "Base",
     "BaseModel",
     "TimestampMixin",
     "Producer",
+    "Department",
     "Municipality",
     "CoffeeVariety",
     "Farm",
@@ -27,4 +39,12 @@ __all__ = [
     "InternationalBuyer",
     "BuyerBatchContract",
     "BuyerApiAuditLog",
+    "SensorType",
+    "IotSensor",
+    "SensorAnomalyLog",
+    "CropNutrientReference",
+    "SoilLabAnalysis",
+    "FertilizerRecommendation",
+    "AgronomicAlert",
+    "AgronomistFieldVisit",
 ]
