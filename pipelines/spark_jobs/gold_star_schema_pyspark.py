@@ -6,13 +6,6 @@ Reads the operational PostgreSQL tables, builds the dimensional model defined in
 Snappy Parquet to ``s3://<bucket>/gold/<table>/``, the locations registered in Athena
 (``ATHENA_GOLD_STAR_SCHEMA_DDL``) and read by Power BI.
 
-Differences from the dimensional specification, because the columns do not exist in
-the operational schema:
-
-- ``dim_finca.farm_name`` is the producer's ``full_name``; ``altitude_meters`` is NULL.
-- ``fact_entregas.is_organic`` is NULL; ``variety_id`` comes from the delivery's plot.
-- ``fact_alertas`` is written empty: the ``agronomic_alerts`` table is still planned.
-
 The module is self-contained (only ``pyspark``, ``psycopg`` and ``boto3``) so it runs
 inside the Airflow image without installing the API package.
 
@@ -73,6 +66,20 @@ LEFT JOIN export_batches b ON b.batch_id = c.batch_id
 ORDER BY d.delivery_id, c.contributed_kg DESC NULLS LAST
 """
 
+ALERTS_QUERY = """
+SELECT
+    a.alert_id::text                       AS alert_id,
+    CAST(TO_CHAR(a.alert_date, 'YYYYMMDD') AS INT) AS date_key,
+    a.farm_id::text                        AS farm_id,
+    a.alert_type                           AS alert_type,
+    a.severity                             AS severity,
+    a.alert_status                         AS alert_status,
+    a.soil_moisture_mean_pct::float8       AS soil_moisture_mean_pct,
+    a.precip_accum_72h_mm::float8          AS precip_accum_72h_mm
+FROM agronomic_alerts a
+ORDER BY a.alert_date DESC, a.alert_id
+"""
+
 
 def to_libpq_dsn(database_url: str) -> str:
     """Convert a SQLAlchemy URL (``postgresql+psycopg://``) into a libpq DSN."""
@@ -94,6 +101,27 @@ def extract_operational_rows(
         deliveries = conn.execute(DELIVERIES_QUERY).fetchall()
     logger.info("Extracted %d farms and %d deliveries", len(farms), len(deliveries))
     return farms, deliveries
+
+
+def extract_operational_alerts(database_url: str) -> list[dict[str, Any]]:
+    """Read agronomic_alerts from PostgreSQL if the table exists and has rows."""
+    import psycopg
+    from psycopg.rows import dict_row
+
+    try:
+        with psycopg.connect(to_libpq_dsn(database_url), row_factory=dict_row) as conn:
+            conn.execute(SET_OPERATOR_ROLE)
+            exists = conn.execute(
+                "SELECT to_regclass('public.agronomic_alerts') IS NOT NULL AS ok"
+            ).fetchone()
+            if not exists or not exists["ok"]:
+                return []
+            alerts = conn.execute(ALERTS_QUERY).fetchall()
+        logger.info("Extracted %d agronomic alerts", len(alerts))
+        return alerts
+    except Exception as exc:
+        logger.warning("Could not extract agronomic_alerts: %s", exc)
+        return []
 
 
 # ==============================================================
@@ -163,12 +191,48 @@ def build_spark_session(app_name: str = "agrosense-gold-star-schema") -> Any:
     )
 
 
+def _normalize_alerts(alerts: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    if not alerts:
+        return []
+    normalized: list[dict[str, Any]] = []
+    for item in alerts:
+        dk = item.get("date_key")
+        if dk is None and item.get("alert_date") is not None:
+            ad = item["alert_date"]
+            if isinstance(ad, date):
+                dk = int(ad.strftime("%Y%m%d"))
+            else:
+                dk = int(str(ad).replace("-", "")[:8])
+        normalized.append(
+            {
+                "alert_id": str(item["alert_id"]),
+                "date_key": int(dk or 20260101),
+                "farm_id": str(item["farm_id"]),
+                "alert_type": str(item["alert_type"]),
+                "severity": str(item["severity"]),
+                "alert_status": str(item.get("alert_status") or "OPEN"),
+                "soil_moisture_mean_pct": (
+                    float(item["soil_moisture_mean_pct"])
+                    if item.get("soil_moisture_mean_pct") is not None
+                    else None
+                ),
+                "precip_accum_72h_mm": (
+                    float(item["precip_accum_72h_mm"])
+                    if item.get("precip_accum_72h_mm") is not None
+                    else None
+                ),
+            }
+        )
+    return normalized
+
+
 def build_gold_tables(
     spark: Any,
     farms: list[dict[str, Any]],
     deliveries: list[dict[str, Any]],
     calendar_start: date | None = None,
     calendar_end: date | None = None,
+    alerts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the four gold DataFrames from the operational rows."""
     from pyspark.sql import functions as F
@@ -227,7 +291,8 @@ def build_gold_tables(
         F.dayofweek("d").isin(1, 7).alias("is_weekend"),
     )
 
-    fact_alertas = spark.createDataFrame([], schema=schemas["fact_alertas"])
+    normalized_alerts = _normalize_alerts(alerts)
+    fact_alertas = spark.createDataFrame(normalized_alerts, schema=schemas["fact_alertas"])
 
     return {
         "dim_finca": dim_finca,
@@ -286,11 +351,12 @@ def run_gold_star_schema_job(
 ) -> dict[str, Any]:
     """Extract from PostgreSQL, build the star schema with Spark and publish it to S3."""
     farms, deliveries = extract_operational_rows(database_url)
+    alerts = extract_operational_alerts(database_url)
 
     own_session = spark is None
     spark = spark or build_spark_session()
     try:
-        tables = build_gold_tables(spark, farms, deliveries)
+        tables = build_gold_tables(spark, farms, deliveries, alerts=alerts)
         counts = {name: df.count() for name, df in tables.items()}
         with tempfile.TemporaryDirectory(prefix="agrosense-gold-") as tmp:
             paths = write_gold_tables(tables, tmp)
@@ -321,11 +387,13 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "ALERTS_QUERY",
     "DELIVERIES_QUERY",
     "FARMS_QUERY",
     "GOLD_TABLES",
     "build_gold_tables",
     "build_spark_session",
+    "extract_operational_alerts",
     "extract_operational_rows",
     "run_gold_star_schema_job",
     "to_libpq_dsn",

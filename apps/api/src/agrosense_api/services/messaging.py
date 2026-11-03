@@ -129,6 +129,12 @@ def telemetry_routing_key(telemetry: TelemetryCreate) -> str:
     return f"telemetry.block.{telemetry.farm_id}"
 
 
+def telemetry_sensor_type_routing_key(telemetry: TelemetryCreate) -> str:
+    """Routing key por tipo de sensor ``telemetry.block.<metric>.<farm_id>`` (Tema #10)."""
+    safe_metric = (telemetry.metric or "unknown").strip().lower().replace(" ", "_")
+    return f"telemetry.block.{safe_metric}.{telemetry.farm_id}"
+
+
 async def publish_telemetry(event_id: UUID, telemetry: TelemetryCreate) -> None:
     """Publica la lectura en ``agrosense.ingest.exchange`` -> ``telemetry.raw.queue`` (rabbitmq.md).
 
@@ -153,6 +159,7 @@ async def publish_telemetry(event_id: UUID, telemetry: TelemetryCreate) -> None:
                 content_type="application/json",
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
                 message_id=str(event_id),
+                headers={"x-sensor-type": telemetry.metric},
             )
             await topology["ingest_exchange"].publish(
                 message,
@@ -176,6 +183,18 @@ class OrderedTelemetryEvent:
     value: float
     unit: str
     observed_at: datetime
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "idempotency_key": self.idempotency_key,
+            "event_id": self.event_id,
+            "farm_id": self.farm_id,
+            "sensor_id": self.sensor_id,
+            "metric": self.metric,
+            "value": self.value,
+            "unit": self.unit,
+            "observed_at": self.observed_at.isoformat(),
+        }
 
 
 class IdempotencyDeduplicator:
@@ -228,10 +247,12 @@ class FastTelemetryConsumerWorker:
         topology: RabbitMQTopologyConfig | None = None,
         deduplicator: IdempotencyDeduplicator | None = None,
         on_ordered_event: Callable[[OrderedTelemetryEvent], None] | None = None,
+        max_history_per_sensor: int = 10_000,
     ) -> None:
         self.topology = topology or RabbitMQTopologyConfig()
         self.deduplicator = deduplicator or IdempotencyDeduplicator()
         self.on_ordered_event = on_ordered_event
+        self.max_history_per_sensor = max_history_per_sensor
         self.processed_by_sensor: dict[str, list[OrderedTelemetryEvent]] = defaultdict(list)
         self.dead_letter_messages: list[dict[str, Any]] = []
         self.duplicate_keys: list[str] = []
@@ -382,6 +403,9 @@ class FastTelemetryConsumerWorker:
                 existing.extend(combined)
             else:
                 existing.extend(ordered_events)
+
+            if self.max_history_per_sensor > 0 and len(existing) > self.max_history_per_sensor:
+                del existing[: len(existing) - self.max_history_per_sensor]
 
             report.ordered_by_sensor[sensor_id] = ordered_events
             report.accepted_count += len(ordered_events)

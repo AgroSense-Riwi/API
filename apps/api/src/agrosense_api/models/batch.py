@@ -66,6 +66,10 @@ class ExportBatch(BaseModel):
         Numeric(8, 2),
         nullable=True,
     )
+    avg_fertilizer_red_pct: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2),
+        nullable=True,
+    )
 
     # Relaciones
     compositions: Mapped[list[BatchFarmComposition]] = relationship(

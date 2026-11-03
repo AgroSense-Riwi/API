@@ -61,6 +61,10 @@ class Farm(BaseModel):
         nullable=False,
         index=True,
     )
+    name: Mapped[str | None] = mapped_column(
+        String(150),
+        nullable=True,
+    )
     producer_id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("producers.producer_id", name="fk_farms_producer_id"),
@@ -79,6 +83,14 @@ class Farm(BaseModel):
         Numeric(9, 6),
         nullable=False,
     )
+    altitude_msl: Mapped[Decimal | None] = mapped_column(
+        Numeric(7, 2),
+        nullable=True,
+    )
+    total_area_ha: Mapped[Decimal | None] = mapped_column(
+        Numeric(8, 2),
+        nullable=True,
+    )
     cultivated_area_ha: Mapped[Decimal] = mapped_column(
         Numeric(8, 2),
         nullable=False,
@@ -92,6 +104,18 @@ class Farm(BaseModel):
         nullable=False,
         default=False,
         server_default=text("false"),
+    )
+    has_pilot_sensors: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    has_valid_coords: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
     )
     # Perímetro de la finca (EPSG:4326). Nullable por compatibilidad con el seed; una finca
     # sin geometría NO se considera conforme con RN-09 en la certificación.
