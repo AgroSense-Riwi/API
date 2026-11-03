@@ -23,6 +23,10 @@ dev = [
     "requests-mock>=1.12.1",
     "pyarrow>=26.0.0",
 ]
+# PySpark del job gold (pipelines/spark_jobs/gold_star_schema_pyspark.py); requiere Java 17+.
+spark = [
+    "pyspark>=4.2.1,<4.3",
+]
 
 [tool.ruff]
 line-length = 100
