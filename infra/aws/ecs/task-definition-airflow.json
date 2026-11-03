@@ -36,6 +36,7 @@
           "value": "/tmp/simple_auth_manager_passwords.json"
         },
         { "name": "SPARK_MASTER", "value": "local[2]" },
+        { "name": "S3_BUCKET_GOLD", "value": "datalakeagrosense" },
         { "name": "AWS_DEFAULT_REGION", "value": "${AWS_REGION}" }
       ],
       "secrets": [
@@ -70,10 +71,6 @@
         {
           "name": "S3_BUCKET_BRONZE",
           "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/s3-bucket-raw"
-        },
-        {
-          "name": "S3_BUCKET_GOLD",
-          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/s3-bucket"
         },
         {
           "name": "DATABASE_URL",
