@@ -76,9 +76,7 @@ class TelemetryPersistenceSink:
         try:
             import boto3
 
-            self._s3_client = boto3.client(
-                "s3", region_name=os.getenv("AWS_REGION", "us-east-2")
-            )
+            self._s3_client = boto3.client("s3", region_name=os.getenv("AWS_REGION", "us-east-2"))
             return self._s3_client
         except Exception as exc:  # pragma: no cover
             logger.warning("Unable to initialize S3 client for telemetry persistence: %s", exc)
@@ -177,7 +175,9 @@ async def handle_message(
         return "rejected"
 
     if report.accepted_count > 0:
-        active_sink = sink or getattr(worker, "persistence_sink", None) or TelemetryPersistenceSink()
+        active_sink = (
+            sink or getattr(worker, "persistence_sink", None) or TelemetryPersistenceSink()
+        )
         active_sink.persist_batch(
             report.ordered_by_sensor,
             batch_id=message.message_id or "msg",

@@ -83,7 +83,9 @@ class SensorAnomalyLog(BaseModel):
     )
     sensor_id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("iot_sensors.sensor_id", ondelete="CASCADE", name="fk_sensor_anomalies_sensor_id"),
+        ForeignKey(
+            "iot_sensors.sensor_id", ondelete="CASCADE", name="fk_sensor_anomalies_sensor_id"
+        ),
         nullable=False,
     )
     farm_id: Mapped[uuid.UUID] = mapped_column(
@@ -163,7 +165,9 @@ class FertilizerRecommendation(BaseModel):
     )
     farm_id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("farms.farm_id", ondelete="CASCADE", name="fk_fertilizer_recommendations_farm_id"),
+        ForeignKey(
+            "farms.farm_id", ondelete="CASCADE", name="fk_fertilizer_recommendations_farm_id"
+        ),
         nullable=False,
     )
     plot_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -187,7 +191,7 @@ class FertilizerRecommendation(BaseModel):
 
 
 class AgronomicAlert(BaseModel):
-    """Alertas agronómicas generadas por los jobs Spark (RN-03 Roya, RN-04 Déficit, RN-05 Lluvia)."""
+    """Alertas agronómicas generadas por Spark (RN-03 Roya, RN-04 Déficit, RN-05 Lluvia)."""
 
     __tablename__ = "agronomic_alerts"
 

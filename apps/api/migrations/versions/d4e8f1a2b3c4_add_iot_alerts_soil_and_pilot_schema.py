@@ -8,7 +8,7 @@ Completes the 3FN operational schema from Proyecto_06_AgroSense_Agricultura_IoT 
   has_valid_coords), export_batches (avg_fertilizer_red_pct), international_buyers (country).
 
 Revision ID: d4e8f1a2b3c4
-Revises: f3b8c1d4a6e2
+Revises: a9c4e6b2d8f1
 Create Date: 2026-11-03 07:20:00.000000
 """
 
@@ -19,7 +19,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "d4e8f1a2b3c4"
-down_revision: str | None = "f3b8c1d4a6e2"
+down_revision: str | None = "a9c4e6b2d8f1"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -27,8 +27,12 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # 1. Additional columns on existing tables
     op.add_column("farms", sa.Column("name", sa.String(length=150), nullable=True))
-    op.add_column("farms", sa.Column("altitude_msl", sa.Numeric(precision=7, scale=2), nullable=True))
-    op.add_column("farms", sa.Column("total_area_ha", sa.Numeric(precision=8, scale=2), nullable=True))
+    op.add_column(
+        "farms", sa.Column("altitude_msl", sa.Numeric(precision=7, scale=2), nullable=True)
+    )
+    op.add_column(
+        "farms", sa.Column("total_area_ha", sa.Numeric(precision=8, scale=2), nullable=True)
+    )
     op.add_column(
         "farms",
         sa.Column(

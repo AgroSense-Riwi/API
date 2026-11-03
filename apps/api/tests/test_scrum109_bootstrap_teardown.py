@@ -38,7 +38,12 @@ def test_verify_bootstrap_script_exists_and_has_valid_bash_syntax() -> None:
     # Validar sintaxis con bash -n (asegurando LF binario en Windows)
     clean_bytes = script_content.encode("utf-8").replace(b"\r\n", b"\n").replace(b"\r", b"\n")
     result = subprocess.run(
-        [str(Path(r"C:\Program Files\Git\bin\bash.exe")) if os.name == "nt" and Path(r"C:\Program Files\Git\bin\bash.exe").is_file() else "bash", "-n"],
+        [
+            str(Path(r"C:\Program Files\Git\bin\bash.exe"))
+            if os.name == "nt" and Path(r"C:\Program Files\Git\bin\bash.exe").is_file()
+            else "bash",
+            "-n",
+        ],
         input=clean_bytes,
         capture_output=True,
         check=False,

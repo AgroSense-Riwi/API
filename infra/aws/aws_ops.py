@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+
 import boto3
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -57,7 +58,9 @@ def cmd_nat(action: str) -> None:
             print("  ↳ No hay NAT Gateways activos.")
         for n in nats:
             nat_id = n["NatGatewayId"]
-            eips = [a["AllocationId"] for a in n.get("NatGatewayAddresses", []) if a.get("AllocationId")]
+            eips = [
+                a["AllocationId"] for a in n.get("NatGatewayAddresses", []) if a.get("AllocationId")
+            ]
             print(f"  ↳ Eliminando NAT Gateway {nat_id}...")
             ec2.delete_nat_gateway(NatGatewayId=nat_id)
             for _ in range(30):
@@ -179,7 +182,9 @@ def cmd_alarms(action: str) -> None:
         cw.set_alarm_state(
             AlarmName=alarm_name,
             StateValue="OK",
-            StateReason="CT-09 Live Demo resolved: DLQ drained and telemetry consumer nominal (DLQMessageCount = 0)",
+            StateReason=(
+                "CT-09 Live Demo resolved: DLQ drained and consumer nominal (DLQMessageCount = 0)"
+            ),
         )
         cmd_alarms("status")
     else:
@@ -230,7 +235,9 @@ def cmd_teardown(mode: str) -> None:
 
         print("[6/7] Sistemas de archivos EFS:")
         for fs in efs.describe_file_systems()["FileSystems"]:
-            print(f"  {fs['FileSystemId']} | {fs['LifeCycleState']} | {fs['SizeInBytes']['Value']} B")
+            print(
+                f"  {fs['FileSystemId']} | {fs['LifeCycleState']} | {fs['SizeInBytes']['Value']} B"
+            )
 
         print("[7/7] Verificación de Tags Obligatorios CT-03 (proyecto, ambiente, responsable):")
         untagged = []
@@ -242,7 +249,7 @@ def cmd_teardown(mode: str) -> None:
                 if not all(k in tmap for k in ("proyecto", "ambiente", "responsable")):
                     untagged.append(m["ResourceARN"])
         if not untagged:
-            print(f"  ✅ 100% de recursos ({total}/{total}) etiquetados con (proyecto, ambiente, responsable).")
+            print(f"  ✅ 100% de recursos ({total}/{total}) etiquetados (CT-03).")
         else:
             print(f"  ⚠️ Recursos pendientes de tag CT-03: {len(untagged)}")
 

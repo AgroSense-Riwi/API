@@ -1,8 +1,7 @@
-"""Endpoints operativos CRUD, filtrado por Query params, certificación RN-08..10 y verificación pública (Tema #1, E-05, E-16)."""
+"""Endpoints operativos CRUD, certificación RN-08..10 y verificación pública (E-05, E-16)."""
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -67,7 +66,9 @@ class CertificateVerificationResponse(BaseModel):
 async def list_farms(
     session: Annotated[
         AsyncSession,
-        Depends(get_operator_db("ADMIN", "AGRONOMIST", "QUALITY_CHIEF", "SUSTAINABILITY_COMMITTEE")),
+        Depends(
+            get_operator_db("ADMIN", "AGRONOMIST", "QUALITY_CHIEF", "SUSTAINABILITY_COMMITTEE")
+        ),
     ],
     municipality_id: Annotated[int | None, Query(ge=1, description="Filtrar por municipio")] = None,
     overlaps_reserve: Annotated[
@@ -107,7 +108,9 @@ async def get_farm_detail(
     farm_id: Annotated[str, Path(min_length=1, max_length=64)],
     session: Annotated[
         AsyncSession,
-        Depends(get_operator_db("ADMIN", "AGRONOMIST", "QUALITY_CHIEF", "SUSTAINABILITY_COMMITTEE")),
+        Depends(
+            get_operator_db("ADMIN", "AGRONOMIST", "QUALITY_CHIEF", "SUSTAINABILITY_COMMITTEE")
+        ),
     ],
 ) -> FarmSummaryItem:
     try:
@@ -173,8 +176,12 @@ async def list_lots(
         AsyncSession,
         Depends(get_operator_db("ADMIN", "QUALITY_CHIEF", "SUSTAINABILITY_COMMITTEE")),
     ],
-    certified_only: Annotated[bool | None, Query(description="Filtrar por lotes certificados")] = None,
-    exportable_only: Annotated[bool | None, Query(description="Filtrar por lotes exportables")] = None,
+    certified_only: Annotated[
+        bool | None, Query(description="Filtrar por lotes certificados")
+    ] = None,
+    exportable_only: Annotated[
+        bool | None, Query(description="Filtrar por lotes exportables")
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[LotSummaryItem]:
@@ -251,10 +258,12 @@ async def revoke_lot_certification(
 @router.post(
     "/certificates/verify",
     response_model=CertificateVerificationResponse,
-    summary="Verificar autenticidad criptográfica SHA-256 de un certificado digital (SCRUM-168 / E-16)",
+    summary="Verificar autenticidad SHA-256 de un certificado digital (SCRUM-168 / E-16)",
 )
 async def verify_digital_certificate(
-    certificate_payload: Annotated[dict[str, Any], Body(description="JSON del certificado digital")],
+    certificate_payload: Annotated[
+        dict[str, Any], Body(description="JSON del certificado digital")
+    ],
 ) -> CertificateVerificationResponse:
     result = PublicCertificateValidator.verify_certificate_integrity(certificate_payload)
     return CertificateVerificationResponse(**result)
