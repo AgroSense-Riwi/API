@@ -15,7 +15,9 @@ from gold_star_schema_pyspark import build_spark_session
 
 EXPECTED_DAGS = {"dag_gold_star_schema", "dag_satellite_ingestion"}
 
-bag = DagBag("/opt/airflow/dags", include_examples=False)
+# Airflow 3.3: DagBag ya no recibe include_examples; los ejemplos se desactivan con
+# AIRFLOW__CORE__LOAD_EXAMPLES=false (lo fija el workflow y la task definition).
+bag = DagBag("/opt/airflow/dags")
 if bag.import_errors:
     raise SystemExit(f"Errores de importación: {bag.import_errors}")
 missing = EXPECTED_DAGS - set(bag.dag_ids)

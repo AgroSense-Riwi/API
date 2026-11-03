@@ -52,7 +52,7 @@ jobs:
 
       - name: Smoke test (DAGs sin errores de importación + SparkSession local)
         run: |
-          docker run --rm -v "${PWD}/infra/docker/airflow/smoke_test.py:/tmp/smoke_test.py:ro" --entrypoint python agrosense-airflow:ci /tmp/smoke_test.py
+          docker run --rm -e AIRFLOW__CORE__LOAD_EXAMPLES=false -v "${PWD}/infra/docker/airflow/smoke_test.py:/tmp/smoke_test.py:ro" --entrypoint python agrosense-airflow:ci /tmp/smoke_test.py
 
       - name: Configurar credenciales AWS (OIDC si AWS_ROLE_ARN existe; si no, llaves)
         uses: aws-actions/configure-aws-credentials@v4
