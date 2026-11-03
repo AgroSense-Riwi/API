@@ -62,14 +62,20 @@ class S3BronzeWriter:
         self._s3_client = None
 
     @staticmethod
+    def _key_prefix() -> str:
+        """Optional layer prefix (e.g. ``raw/``) from ``S3_BRONZE_PREFIX``; empty by default."""
+        prefix = os.getenv("S3_BRONZE_PREFIX", "").strip().strip("/")
+        return f"{prefix}/" if prefix else ""
+
+    @staticmethod
     def get_nasa_power_s3_key(ds: str) -> str:
         """Generate partitioned S3 key for NASA POWER daily ingestion."""
-        return f"weather_nasa_power/dt={ds}/nasa_power_{ds}.json"
+        return f"{S3BronzeWriter._key_prefix()}weather_nasa_power/dt={ds}/nasa_power_{ds}.json"
 
     @staticmethod
     def get_open_meteo_s3_key(ds: str) -> str:
         """Generate partitioned S3 key for Open-Meteo forecast ingestion."""
-        return f"weather_open_meteo/dt={ds}/open_meteo_{ds}.json"
+        return f"{S3BronzeWriter._key_prefix()}weather_open_meteo/dt={ds}/open_meteo_{ds}.json"
 
     def _get_boto3_client(self) -> Any:
         """Get or initialize boto3 S3 client."""
