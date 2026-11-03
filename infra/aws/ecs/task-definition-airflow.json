@@ -2,14 +2,14 @@
   "family": "agrosense-airflow",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
-  "cpu": "512",
-  "memory": "2048",
+  "cpu": "1024",
+  "memory": "4096",
   "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/rol_1_ecsTaskExecutionRole",
   "taskRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/rol_2_agrosense-api-task-role",
   "containerDefinitions": [
     {
       "name": "airflow-standalone-scheduler",
-      "image": "apache/airflow:3.3.2",
+      "image": "${AIRFLOW_IMAGE}",
       "essential": true,
       "entryPoint": [
         "/usr/bin/dumb-init",
@@ -35,6 +35,7 @@
           "name": "AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE",
           "value": "/tmp/simple_auth_manager_passwords.json"
         },
+        { "name": "SPARK_MASTER", "value": "local[2]" },
         { "name": "AWS_DEFAULT_REGION", "value": "${AWS_REGION}" }
       ],
       "secrets": [
@@ -69,6 +70,14 @@
         {
           "name": "S3_BUCKET_BRONZE",
           "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/s3-bucket-raw"
+        },
+        {
+          "name": "S3_BUCKET_GOLD",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/s3-bucket"
+        },
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:agrosense/prod/database-url-sync"
         }
       ],
       "logConfiguration": {

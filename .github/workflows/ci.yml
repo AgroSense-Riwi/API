@@ -38,7 +38,12 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      - run: uv sync --locked --all-packages
+      # Java 17 para la SparkSession local de los tests del job PySpark gold.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: uv sync --locked --all-packages --group spark
       # Una sola ejecución: si un hook modifica archivos o falla, el job falla.
       - run: uv run pre-commit run --all-files --show-diff-on-failure
       - name: Crear y migrar la base de pruebas (alembic upgrade head)

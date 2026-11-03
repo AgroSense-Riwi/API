@@ -39,8 +39,12 @@ def test_ecs_airflow_uses_dedicated_secrets_and_login() -> None:
     assert "airflow-api-secret" in secrets["AIRFLOW__WEBSERVER__SECRET_KEY"]
     assert "airflow-database-url" in secrets["AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"]
     assert "airflow-admin-password" in secrets["AIRFLOW_ADMIN_PASSWORD"]
-    for value in secrets.values():
+    for name, value in secrets.items():
         assert "jwt-secret" not in value
-        assert "database-url-sync" not in value
+        # La base operacional solo se expone como DATABASE_URL (lectura del DAG gold);
+        # los metadatos de Airflow usan su propia base (airflow-database-url).
+        if name != "DATABASE_URL":
+            assert "database-url-sync" not in value, name
+    assert secrets["DATABASE_URL"].endswith("agrosense/prod/database-url-sync")
     assert container["command"] == ["standalone"]
     assert "exec /entrypoint" in " ".join(container["entryPoint"])
