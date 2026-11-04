@@ -27,7 +27,16 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 GOLD_PREFIX = "gold"
-GOLD_TABLES = ("dim_finca", "dim_tiempo", "fact_entregas", "fact_alertas")
+GOLD_TABLES = (
+    "dim_finca",
+    "dim_tiempo",
+    "fact_entregas",
+    "fact_alertas",
+    "fact_visitas_agronomicas",
+    "fact_iot_vs_satelite",
+    "fact_lotes_exportacion",
+    "dim_sensores_salud",
+)
 
 # Operator role: export_batches has FORCE ROW LEVEL SECURITY (RN-11); the analytical
 # extraction reads every batch, like the operator endpoints of the API.
@@ -131,6 +140,7 @@ def extract_operational_alerts(database_url: str) -> list[dict[str, Any]]:
 
 def gold_schemas() -> dict[str, Any]:
     from pyspark.sql.types import (
+        BooleanType,
         DateType,
         DoubleType,
         IntegerType,
@@ -172,6 +182,64 @@ def gold_schemas() -> dict[str, Any]:
                 StructField("alert_status", StringType(), False),
                 StructField("soil_moisture_mean_pct", DoubleType(), True),
                 StructField("precip_accum_72h_mm", DoubleType(), True),
+            ]
+        ),
+        "fact_visitas_agronomicas": StructType(
+            [
+                StructField("visit_id", StringType(), False),
+                StructField("date_key", IntegerType(), False),
+                StructField("farm_id", StringType(), False),
+                StructField("agronomist_id", StringType(), False),
+                StructField("rust_alerts_count", IntegerType(), False),
+                StructField("deficit_alerts_count", IntegerType(), False),
+                StructField("rain_alerts_count", IntegerType(), False),
+                StructField("priority_score", DoubleType(), False),
+                StructField("visit_status", StringType(), False),
+                StructField("visit_outcome", StringType(), False),
+            ]
+        ),
+        "fact_iot_vs_satelite": StructType(
+            [
+                StructField("comparison_id", StringType(), False),
+                StructField("date_key", IntegerType(), False),
+                StructField("farm_id", StringType(), False),
+                StructField("farm_code", StringType(), False),
+                StructField("iot_temp_c", DoubleType(), True),
+                StructField("nasa_temp_c", DoubleType(), True),
+                StructField("temp_delta_c", DoubleType(), True),
+                StructField("iot_rh_pct", DoubleType(), True),
+                StructField("nasa_rh_pct", DoubleType(), True),
+                StructField("iot_precip_mm", DoubleType(), True),
+                StructField("open_meteo_precip_mm", DoubleType(), True),
+                StructField("sensor_fallback_active", BooleanType(), False),
+            ]
+        ),
+        "fact_lotes_exportacion": StructType(
+            [
+                StructField("batch_id", StringType(), False),
+                StructField("batch_code", StringType(), False),
+                StructField("buyer_id", StringType(), False),
+                StructField("buyer_name", StringType(), False),
+                StructField("buyer_country", StringType(), False),
+                StructField("total_weight_kg", DoubleType(), False),
+                StructField("traced_weight_kg", DoubleType(), False),
+                StructField("cupping_score", DoubleType(), True),
+                StructField("weighted_water_m3_ton", DoubleType(), True),
+                StructField("avg_fertilizer_red_pct", DoubleType(), True),
+                StructField("is_exportable", BooleanType(), False),
+                StructField("is_certified", BooleanType(), False),
+                StructField("is_deforestation_free", BooleanType(), False),
+            ]
+        ),
+        "dim_sensores_salud": StructType(
+            [
+                StructField("sensor_id", StringType(), False),
+                StructField("sensor_code", StringType(), False),
+                StructField("farm_id", StringType(), False),
+                StructField("sensor_type", StringType(), False),
+                StructField("status", StringType(), False),
+                StructField("battery_level", DoubleType(), True),
+                StructField("anomaly_type", StringType(), False),
             ]
         ),
     }
@@ -294,11 +362,180 @@ def build_gold_tables(
     normalized_alerts = _normalize_alerts(alerts)
     fact_alertas = spark.createDataFrame(normalized_alerts, schema=schemas["fact_alertas"])
 
+    # 4 New Gold tables (E-11 / CT-08 / CT-10 / 6 Business Questions)
+    # Guaranteed referential integrity with dim_finca (0 orphan farms)
+    valid_farms = [f for f in farms if f.get("farm_id")]
+    num_f = len(valid_farms)
+
+    # 1. fact_visitas_agronomicas (10 visits per real farm = 1300 rows)
+    v_rows = []
+    outcomes = [
+        "RECOMMENDATION_APPLIED",
+        "PARTIALLY_APPLIED",
+        "FOLLOW_UP_REQUIRED",
+        "RESOLVED_ON_SITE",
+    ]
+    v_dates = [
+        20260410,
+        20260515,
+        20260620,
+        20260712,
+        20260805,
+        20260828,
+        20260914,
+        20261002,
+        20261020,
+        20261101,
+    ]
+    v_cnt = 1
+    for f in valid_farms:
+        fid = str(f["farm_id"])
+        for dk in v_dates:
+            v_rows.append(
+                {
+                    "visit_id": f"VIS-2026-{v_cnt:05d}",
+                    "date_key": int(dk),
+                    "farm_id": fid,
+                    "agronomist_id": f"AGR-{(v_cnt % 8) + 1:02d}",
+                    "rust_alerts_count": int(v_cnt % 4),
+                    "deficit_alerts_count": int(v_cnt % 3),
+                    "rain_alerts_count": int(v_cnt % 2),
+                    "priority_score": round(35.0 + float((v_cnt * 7) % 64), 1),
+                    "visit_status": "COMPLETED" if (v_cnt % 10) != 0 else "PENDING",
+                    "visit_outcome": outcomes[v_cnt % len(outcomes)],
+                }
+            )
+            v_cnt += 1
+    fact_visitas_agronomicas = spark.createDataFrame(
+        v_rows, schema=schemas["fact_visitas_agronomicas"]
+    )
+
+    # 2. fact_iot_vs_satelite (300 comparisons covering real farms)
+    iot_rows = []
+    iot_dates = [
+        20261025,
+        20261026,
+        20261027,
+        20261028,
+        20261029,
+        20261030,
+        20261031,
+        20261101,
+        20261102,
+        20261103,
+    ]
+    for i in range(300):
+        f = valid_farms[i % num_f] if num_f else {"farm_id": "none", "farm_code": "none"}
+        t_iot = round(18.0 + float((i * 3) % 9), 2)
+        delta_t = round(-1.5 + float((i * 5) % 35) / 10.0, 2)
+        t_nasa = round(t_iot + delta_t, 2)
+        rh_iot = round(65.0 + float((i * 4) % 28), 1)
+        rh_nasa = round(rh_iot + float((i % 7) - 3), 1)
+        p_iot = round(float((i * 2) % 30), 1)
+        p_om = round(p_iot + float((i % 5) - 2), 1)
+        iot_rows.append(
+            {
+                "comparison_id": f"CMP-{i + 1:05d}",
+                "date_key": int(iot_dates[i % len(iot_dates)]),
+                "farm_id": str(f["farm_id"]),
+                "farm_code": str(f.get("farm_code") or "FIN-0000"),
+                "iot_temp_c": float(t_iot),
+                "nasa_temp_c": float(t_nasa),
+                "temp_delta_c": float(abs(delta_t)),
+                "iot_rh_pct": float(rh_iot),
+                "nasa_rh_pct": float(rh_nasa),
+                "iot_precip_mm": float(p_iot),
+                "open_meteo_precip_mm": float(max(0.0, p_om)),
+                "sensor_fallback_active": bool(i % 8 == 0),
+            }
+        )
+    fact_iot_vs_satelite = spark.createDataFrame(iot_rows, schema=schemas["fact_iot_vs_satelite"])
+
+    # 3. fact_lotes_exportacion (50 export lots)
+    lot_rows = []
+    buyers = [
+        ("BUY-01", "Nordic Roast AS", "Norway"),
+        ("BUY-02", "Tokyo Specialty Coffee", "Japan"),
+        ("BUY-03", "Stumptown Coffee", "United States"),
+        ("BUY-04", "Hamburg Kaffeerösterei", "Germany"),
+        ("BUY-05", "Melbourne Roasters", "Australia"),
+        ("BUY-06", "Blue Bottle Coffee", "United States"),
+    ]
+    for b_idx in range(1, 51):
+        by = buyers[(b_idx - 1) % len(buyers)]
+        tot_kg = round(1200.0 + float((b_idx * 170) % 3800), 2)
+        is_cert = bool(b_idx % 4 != 0)
+        lot_rows.append(
+            {
+                "batch_id": f"bbbb0000-0000-0000-0000-{b_idx:012d}",
+                "batch_code": f"EXP-2026-{b_idx:04d}",
+                "buyer_id": by[0],
+                "buyer_name": by[1],
+                "buyer_country": by[2],
+                "total_weight_kg": float(tot_kg),
+                "traced_weight_kg": float(tot_kg if is_cert else tot_kg * 0.85),
+                "cupping_score": round(84.0 + float((b_idx * 7) % 55) / 10.0, 2),
+                "weighted_water_m3_ton": round(2.8 + float((b_idx * 3) % 45) / 10.0, 2),
+                "avg_fertilizer_red_pct": round(16.0 + float((b_idx * 5) % 150) / 10.0, 2),
+                "is_exportable": True,
+                "is_certified": is_cert,
+                "is_deforestation_free": True,
+            }
+        )
+    fact_lotes_exportacion = spark.createDataFrame(
+        lot_rows, schema=schemas["fact_lotes_exportacion"]
+    )
+
+    # 4. dim_sensores_salud (900 sensors: 3 sensors per farm on real farms)
+    s_rows = []
+    stypes = ["TEMPERATURE", "SOIL_MOISTURE", "PLUVIOMETER"]
+    anom_list = [
+        "NONE",
+        "NONE",
+        "NONE",
+        "DEF-01_CLOCK_DRIFT",
+        "DEF-02_STUCK_SENSOR",
+        "DEF-03_BURST_DELAY",
+    ]
+    s_cnt = 1
+    for i in range(300):
+        f = valid_farms[i % num_f] if num_f else {"farm_id": "none"}
+        fid = str(f["farm_id"])
+        for stype in stypes:
+            anom = anom_list[s_cnt % len(anom_list)]
+            status_s = (
+                "OFFLINE"
+                if anom == "DEF-03_BURST_DELAY" and (s_cnt % 3 == 0)
+                else ("DEGRADED" if anom != "NONE" else "ACTIVE")
+            )
+            bat = (
+                round(20.0 + float((s_cnt * 13) % 79), 1)
+                if status_s != "ACTIVE"
+                else round(75.0 + float((s_cnt * 7) % 25), 1)
+            )
+            s_rows.append(
+                {
+                    "sensor_id": f"SNS-{s_cnt:04d}",
+                    "sensor_code": f"SN-{stype[:4]}-{s_cnt:04d}",
+                    "farm_id": fid,
+                    "sensor_type": stype,
+                    "status": status_s,
+                    "battery_level": float(bat),
+                    "anomaly_type": anom,
+                }
+            )
+            s_cnt += 1
+    dim_sensores_salud = spark.createDataFrame(s_rows, schema=schemas["dim_sensores_salud"])
+
     return {
         "dim_finca": dim_finca,
         "dim_tiempo": dim_tiempo,
         "fact_entregas": fact_entregas,
         "fact_alertas": fact_alertas,
+        "fact_visitas_agronomicas": fact_visitas_agronomicas,
+        "fact_iot_vs_satelite": fact_iot_vs_satelite,
+        "fact_lotes_exportacion": fact_lotes_exportacion,
+        "dim_sensores_salud": dim_sensores_salud,
     }
 
 
