@@ -267,4 +267,70 @@ CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.fact_alertas (
 STORED AS PARQUET
 LOCATION 's3://datalakeagrosense/gold/fact_alertas/'
 TBLPROPERTIES ('parquet.compression'='SNAPPY');
+
+CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.fact_visitas_agronomicas (
+  visit_id STRING,
+  date_key INT,
+  farm_id STRING,
+  agronomist_id STRING,
+  rust_alerts_count INT,
+  deficit_alerts_count INT,
+  rain_alerts_count INT,
+  priority_score DOUBLE,
+  visit_status STRING,
+  visit_outcome STRING
+)
+STORED AS PARQUET
+LOCATION 's3://datalakeagrosense/gold/fact_visitas_agronomicas/'
+TBLPROPERTIES ('parquet.compression'='SNAPPY');
+
+CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.fact_iot_vs_satelite (
+  comparison_id STRING,
+  date_key INT,
+  farm_id STRING,
+  farm_code STRING,
+  iot_temp_c DOUBLE,
+  nasa_temp_c DOUBLE,
+  temp_delta_c DOUBLE,
+  iot_rh_pct DOUBLE,
+  nasa_rh_pct DOUBLE,
+  iot_precip_mm DOUBLE,
+  open_meteo_precip_mm DOUBLE,
+  sensor_fallback_active BOOLEAN
+)
+STORED AS PARQUET
+LOCATION 's3://datalakeagrosense/gold/fact_iot_vs_satelite/'
+TBLPROPERTIES ('parquet.compression'='SNAPPY');
+
+CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.fact_lotes_exportacion (
+  batch_id STRING,
+  batch_code STRING,
+  buyer_id STRING,
+  buyer_name STRING,
+  buyer_country STRING,
+  total_weight_kg DOUBLE,
+  traced_weight_kg DOUBLE,
+  cupping_score DOUBLE,
+  weighted_water_m3_ton DOUBLE,
+  avg_fertilizer_red_pct DOUBLE,
+  is_exportable BOOLEAN,
+  is_certified BOOLEAN,
+  is_deforestation_free BOOLEAN
+)
+STORED AS PARQUET
+LOCATION 's3://datalakeagrosense/gold/fact_lotes_exportacion/'
+TBLPROPERTIES ('parquet.compression'='SNAPPY');
+
+CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.dim_sensores_salud (
+  sensor_id STRING,
+  sensor_code STRING,
+  farm_id STRING,
+  sensor_type STRING,
+  status STRING,
+  battery_level DOUBLE,
+  anomaly_type STRING
+)
+STORED AS PARQUET
+LOCATION 's3://datalakeagrosense/gold/dim_sensores_salud/'
+TBLPROPERTIES ('parquet.compression'='SNAPPY');
 """
