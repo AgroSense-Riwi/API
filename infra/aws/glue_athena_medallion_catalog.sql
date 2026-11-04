@@ -80,23 +80,15 @@ TBLPROPERTIES (
 
 CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.fact_visitas_agronomicas (
   visit_id STRING,
+  date_key INT,
   farm_id STRING,
-  farm_code STRING,
-  municipality_name STRING,
-  department_name STRING,
   agronomist_id STRING,
-  visit_date STRING,
-  visit_quarter STRING,
-  days_since_prev_visit INT,
-  alert_id STRING,
-  alert_type STRING,
-  alert_response_hours DOUBLE,
-  recommendation_status STRING,
-  fertilizer_applied BOOLEAN,
-  yield_kg_ha_before DOUBLE,
-  yield_kg_ha_after DOUBLE,
-  yield_delta_pct DOUBLE,
-  notes STRING
+  rust_alerts_count INT,
+  deficit_alerts_count INT,
+  rain_alerts_count INT,
+  priority_score DOUBLE,
+  visit_status STRING,
+  visit_outcome STRING
 )
 STORED AS PARQUET
 LOCATION 's3://datalakeagrosense/gold/fact_visitas_agronomicas/'
@@ -104,24 +96,17 @@ TBLPROPERTIES ('parquet.compression'='SNAPPY', 'classification'='parquet');
 
 CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.fact_iot_vs_satelite (
   comparison_id STRING,
+  date_key INT,
   farm_id STRING,
   farm_code STRING,
-  municipality_name STRING,
-  department_name STRING,
-  altitude_meters INT,
-  observation_month STRING,
-  has_pilot_sensors BOOLEAN,
-  iot_temp_mean_c DOUBLE,
-  nasa_power_temp_mean_c DOUBLE,
-  temp_abs_error_c DOUBLE,
-  iot_humidity_mean_pct DOUBLE,
-  ideam_humidity_mean_pct DOUBLE,
-  humidity_abs_error_pct DOUBLE,
-  iot_soil_moisture_pct DOUBLE,
-  era5_soil_moisture_pct DOUBLE,
-  soil_moisture_abs_error_pct DOUBLE,
-  pearson_r_correlation DOUBLE,
-  microclimate_divergence_flag BOOLEAN
+  iot_temp_c DOUBLE,
+  nasa_temp_c DOUBLE,
+  temp_delta_c DOUBLE,
+  iot_rh_pct DOUBLE,
+  nasa_rh_pct DOUBLE,
+  iot_precip_mm DOUBLE,
+  open_meteo_precip_mm DOUBLE,
+  sensor_fallback_active BOOLEAN
 )
 STORED AS PARQUET
 LOCATION 's3://datalakeagrosense/gold/fact_iot_vs_satelite/'
@@ -131,21 +116,16 @@ CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.fact_lotes_exportacion (
   batch_id STRING,
   batch_code STRING,
   buyer_id STRING,
-  buyer_company STRING,
-  destination_country STRING,
-  coffee_variety STRING,
-  harvest_season STRING,
-  export_date STRING,
+  buyer_name STRING,
+  buyer_country STRING,
   total_weight_kg DOUBLE,
   traced_weight_kg DOUBLE,
-  contributing_farms_count INT,
+  cupping_score DOUBLE,
   weighted_water_m3_ton DOUBLE,
-  regional_benchmark_m3_ton DOUBLE,
-  water_saving_pct DOUBLE,
-  cupping_score_sca DOUBLE,
-  fob_price_usd_kg DOUBLE,
-  certification_status STRING,
-  sha256_certificate_hash STRING
+  avg_fertilizer_red_pct DOUBLE,
+  is_exportable BOOLEAN,
+  is_certified BOOLEAN,
+  is_deforestation_free BOOLEAN
 )
 STORED AS PARQUET
 LOCATION 's3://datalakeagrosense/gold/fact_lotes_exportacion/'
@@ -155,21 +135,10 @@ CREATE EXTERNAL TABLE IF NOT EXISTS agrosense_datalake.dim_sensores_salud (
   sensor_id STRING,
   sensor_code STRING,
   farm_id STRING,
-  farm_code STRING,
-  municipality_name STRING,
-  department_name STRING,
   sensor_type STRING,
-  model STRING,
-  installed_at STRING,
   status STRING,
-  battery_mv INT,
-  rssi_dbm INT,
-  expected_readings_30d INT,
-  actual_readings_30d INT,
-  uptime_30d_pct DOUBLE,
-  anomalies_30d_count INT,
-  dominant_anomaly_type STRING,
-  requires_maintenance BOOLEAN
+  battery_level DOUBLE,
+  anomaly_type STRING
 )
 STORED AS PARQUET
 LOCATION 's3://datalakeagrosense/gold/dim_sensores_salud/'
