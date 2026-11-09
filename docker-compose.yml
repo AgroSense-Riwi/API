@@ -159,7 +159,11 @@ services:
       context: .
       dockerfile: apps/simulators/Dockerfile
     container_name: agrosense_simulators
-    restart: unless-stopped
+    # En SIMULATOR_MODE=dev el simulador es de una sola corrida (ráfagas + 1 ciclo nominal) y
+    # termina con código 0. Con unless-stopped Docker lo relanzaba en bucle (~27 000 mensajes
+    # por corrida), la cola crecía sin control y el healthcheck del broker pasaba de 5 s.
+    # Para volver a emitir: docker compose up -d simulators (o run --rm simulators).
+    restart: "no"
     environment:
       RABBITMQ_URL: ${AGROSENSE_RABBITMQ_URL:?AGROSENSE_RABBITMQ_URL is required}
       SIMULATOR_MODE: ${SIMULATOR_MODE:-dev}
