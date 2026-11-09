@@ -69,17 +69,25 @@ services:
   broker:
     image: rabbitmq:3.13-management-alpine
     container_name: agrosense_broker
+    # Nombre de nodo fijo (rabbit@agrosense-rabbitmq, rabbitmq.md §5): sin él, cada vez que se
+    # recrea el contenedor cambia el hostname y RabbitMQ arranca un nodo nuevo sobre el volumen.
+    hostname: agrosense-rabbitmq
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?RABBITMQ_DEFAULT_USER is required}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
       RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_DEFAULT_VHOST:-/agrosense}
+    # Consola de administración en http://localhost:15672 (rabbitmq.md §6.1). Solo en loopback:
+    # no queda expuesta a la red local. Publicar un puerto exige una red no interna (public_subnet).
+    ports:
+      - "127.0.0.1:${RABBITMQ_MGMT_PORT:-15672}:15672"
     volumes:
       - ./infra/docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
       - ./infra/docker/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
       - iot_telemetry_queue_data:/var/lib/rabbitmq
     networks:
       - private_subnet
+      - public_subnet
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s

@@ -37,7 +37,8 @@ cp .env.example .env && docker compose up -d --build
 La plantilla trae placeholders **solo para desarrollo local** que ya cumplen las validaciones
 (secretos JWT de 32+ caracteres, clave Fernet válida), así que el stack arranca sin editar nada:
 API en `http://localhost:8000/docs`, Airflow en `http://localhost:8080` (usuario
-`AIRFLOW_ADMIN_USER` / `AIRFLOW_ADMIN_PASSWORD`) y el consumidor de telemetría
+`AIRFLOW_ADMIN_USER` / `AIRFLOW_ADMIN_PASSWORD`), consola de RabbitMQ en `http://localhost:15672`
+(usuario `RABBITMQ_DEFAULT_USER` / `RABBITMQ_DEFAULT_PASS`) y el consumidor de telemetría
 `telemetry-consumer` leyendo `telemetry.raw.queue` (vhost `/agrosense`).
 
 ```bash
