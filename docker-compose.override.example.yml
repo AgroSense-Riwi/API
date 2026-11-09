@@ -11,10 +11,4 @@ services:
     networks:
       - private_subnet
       - public_subnet
-
-  broker:
-    ports:
-      - "127.0.0.1:15672:15672"
-    networks:
-      - private_subnet
-      - public_subnet
+# La consola de RabbitMQ (127.0.0.1:15672) ya se publica en docker-compose.yml.

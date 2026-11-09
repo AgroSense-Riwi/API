@@ -41,7 +41,7 @@ Infraestructura de contenedores alineada con una arquitectura de red de doble ca
 | Servicio | Contenedor | Redes | Puertos Host | Volumen / Bind Mount |
 | :--- | :--- | :--- | :--- | :--- |
 | **db** | agrosense_db | private_subnet | Ninguno (Aislado) | `pg_spatial_data`, `infra/docker/postgres/init` |
-| **broker** | agrosense_broker | private_subnet | Ninguno (Aislado) | `iot_telemetry_queue_data` |
+| **broker** | agrosense_broker | private_subnet, public_subnet | `127.0.0.1:${RABBITMQ_MGMT_PORT:-15672}:15672` (solo consola; AMQP 5672 aislado) | `iot_telemetry_queue_data` |
 | **api** | agrosense_api | public_subnet, private_subnet | `${API_PORT:-8000}:8000` | N/A (Auto-migra con `entrypoint.sh`) |
 | **airflow-init** | agrosense_airflow_init | private_subnet | Ninguno (One-shot) | `airflow_logs_data`, `dags`, `plugins` |
 | **airflow-webserver** | agrosense_airflow_webserver | public_subnet, private_subnet | `${AIRFLOW_PORT:-8080}:8080` | `airflow_logs_data`, `dags`, `plugins` |
@@ -65,6 +65,7 @@ docker compose logs -f api airflow-scheduler
 # Detener contenedores y eliminar redes y volúmenes persistentes
 docker compose down -v
 
-# Modo depuración local (expone Postgres en 127.0.0.1:5433 y RabbitMQ UI en 127.0.0.1:15672)
+# Modo depuración local (expone además Postgres en 127.0.0.1:5433; la consola de RabbitMQ
+# ya queda en http://localhost:15672 sin el override)
 docker compose -f docker-compose.yml -f docker-compose.override.example.yml up -d
 ```
